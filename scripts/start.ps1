@@ -3,7 +3,8 @@ param(
     [switch]$SkipBuild,
     [switch]$Lan,
     [string]$LanAddress,
-    [switch]$NoBrowser
+    [switch]$NoBrowser,
+    [switch]$PauseOnReuse
 )
 
 $ErrorActionPreference = 'Stop'
@@ -14,8 +15,8 @@ $frontendRoot = Join-Path $projectRoot 'frontend'
 $runtimeRoot = Join-Path $projectRoot '.local'
 $listenAddress = '127.0.0.1'
 $lanInterface = $null
+. (Join-Path $PSScriptRoot 'lan.ps1')
 if ($Lan -or $LanAddress) {
-    . (Join-Path $PSScriptRoot 'lan.ps1')
     $lanInterface = Get-ShiyiLanInterface -Address $LanAddress
     $listenAddress = '0.0.0.0'
 }
@@ -47,19 +48,48 @@ function Test-ShiyiServer {
     } catch { return $false }
 }
 
+function Show-ShiyiAddresses {
+    param([switch]$ExistingServer)
+
+    Write-Host "`nLocal: $localUrl" -ForegroundColor Cyan
+    $displayInterface = $lanInterface
+    if (-not $displayInterface) {
+        try { $displayInterface = Get-ShiyiLanInterface }
+        catch { $displayInterface = $null }
+    }
+    if ($displayInterface) {
+        $displayLanUrl = "http://$($displayInterface.Address):$Port"
+        $lanAvailable = [bool]$lanInterface
+        if ($ExistingServer -and -not $lanAvailable) {
+            $lanAvailable = Test-ShiyiServer -BaseUrl $displayLanUrl
+        }
+        if ($lanAvailable) {
+            Write-Host "LAN:   $displayLanUrl ($($displayInterface.InterfaceAlias))" -ForegroundColor Green
+            Write-Host 'Phone/tablet: connect to the same Wi-Fi/LAN and open the LAN address above.'
+        } else {
+            Write-Host "LAN:   $displayLanUrl ($($displayInterface.InterfaceAlias); not enabled)" -ForegroundColor Yellow
+            Write-Host 'To enable phone access, stop the server with Ctrl+C and double-click start-lan.cmd.'
+        }
+    } else {
+        Write-Host 'LAN:   no connected Wi-Fi/Ethernet address found.'
+    }
+    $apiBaseUrl = if ($lanInterface) { "http://$($lanInterface.Address):$Port" } else { $localUrl }
+    Write-Host "API:   $apiBaseUrl/api/docs"
+}
+
 $localUrl = "http://127.0.0.1:$Port"
 $requestedUrl = if ($lanInterface) { "http://$($lanInterface.Address):$Port" } else { $localUrl }
 $listeners = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)
 if ($listeners.Count -gt 0) {
     if (Test-ShiyiServer -BaseUrl $requestedUrl) {
         Write-Host "`nShiyi is already running. Opening the existing service."
-        Write-Host "Local: $localUrl"
-        if ($lanInterface) { Write-Host "LAN:   $requestedUrl ($($lanInterface.InterfaceAlias))" }
+        Show-ShiyiAddresses -ExistingServer
         Write-Host 'Keep the original server running. To rebuild or change its settings, stop it with Ctrl+C first.'
         if (-not $NoBrowser) {
             try { Start-Process -FilePath $requestedUrl | Out-Null }
             catch { Write-Host "Open this address in your browser: $requestedUrl" }
         }
+        if ($PauseOnReuse) { Read-Host 'Press Enter to close this window; the original server will keep running' | Out-Null }
         return
     }
     if ($lanInterface -and (Test-ShiyiServer -BaseUrl $localUrl)) {
@@ -128,12 +158,10 @@ try {
     if (-not $env:SHIYI_PUBLIC_URL -and -not $hasConfiguredUrl) {
         $env:SHIYI_PUBLIC_URL = if ($lanInterface) { $lanUrl } else { "http://127.0.0.1:$Port" }
     }
-    Write-Host "`nLocal: http://127.0.0.1:$Port"
+    Show-ShiyiAddresses
     if ($lanInterface) {
-        Write-Host "LAN:   $lanUrl ($($lanInterface.InterfaceAlias))"
-        Write-Host "API:   $lanUrl/api/docs"
         Write-Host 'Windows firewall setup: right-click allow-lan.cmd and choose Run as administrator (once).'
-    } else { Write-Host "API:   http://127.0.0.1:$Port/api/docs" }
+    }
     Write-Host "Press Ctrl+C to stop. Your data stays in backend/data.`n"
     & $python -m uvicorn app.main:app --host $listenAddress --port $Port
     if ($LASTEXITCODE -ne 0) { throw 'The server stopped with an error.' }
