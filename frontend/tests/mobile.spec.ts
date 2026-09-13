@@ -1,0 +1,63 @@
+import { expect, test } from '@playwright/test'
+import { account, item, picture } from './helpers'
+
+test('手机首页直接分科开始，长题评分始终可见，暂停时收起操作栏', async ({ page }) => {
+  await account(page)
+  const record = await item(page, { title: '长题也可以方便评分', subject: 'math', question: Array.from({ length: 20 }, (_, index) => `第 ${index + 1} 个条件：先独立完成这一部分。`).join('\n\n'), answer: '对照每个条件，检查自己的推导。' })
+  await page.goto('/')
+  await expect(page.getByRole('region', { name: '今日复习安排' })).toContainText('可新学')
+  await expect(page.getByRole('link', { name: '开始数学复习' })).toBeInViewport()
+  await page.getByRole('link', { name: '开始数学复习' }).click()
+  await expect(page).toHaveURL(/review\?subject=math/)
+  const dock = page.getByRole('region', { name: '复习操作' })
+  await expect(dock).toBeInViewport()
+  await expect(page.getByRole('navigation', { name: '手机导航' })).not.toBeVisible()
+  await expect(page.getByRole('button', { name: /查看答案/ })).toBeInViewport()
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+  await expect(dock).toBeInViewport()
+  await page.getByRole('button', { name: /查看答案/ }).click()
+  for (const label of ['忘记', '困难', '良好', '轻松']) await expect(dock.getByRole('button', { name: new RegExp(label) })).toBeInViewport()
+  await page.getByRole('button', { name: '休息一下', exact: true }).click()
+  await expect(dock).not.toBeVisible()
+  await page.getByRole('button', { name: '继续复习', exact: true }).click()
+  await expect(dock.getByRole('button', { name: /良好/ })).toBeInViewport()
+  await page.setViewportSize({ width: 320, height: 740 })
+  await expect(dock.getByRole('button', { name: /轻松/ })).toBeInViewport()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
+  await page.screenshot({ path: test.info().outputPath('mobile-review-dock.png'), animations: 'disabled' })
+  await dock.getByRole('button', { name: /良好/ }).click()
+  await expect(page.getByText('今天的努力，已悄悄生根。')).toBeVisible()
+  expect((await (await page.request.get(`/api/v1/items/${record.id}/reviews`)).json()).total).toBe(1)
+})
+
+test('手机端导航、图片录入、公式复习与设置没有横向溢出', async ({ page }) => {
+  await account(page)
+  await item(page, { title: '链式法则', subject: 'math', question: '写出复合函数 $f(g(x))$ 的求导法则。', answer: "$[f(g(x))]'=f'(g(x))g'(x)$" })
+  await item(page, { title: 'recall', subject: 'english', question: 'recall 的意思？', answer: '回忆，想起。' })
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: /测试同学/ })).toBeVisible()
+  await page.screenshot({ path: test.info().outputPath('mobile-dashboard.png'), fullPage: true, animations: 'disabled' })
+  await page.getByRole('navigation', { name: '手机导航' }).getByRole('link', { name: '错题本' }).click()
+  await page.getByRole('button', { name: '收录错题', exact: true }).click()
+  const editor = page.getByRole('dialog')
+  await editor.getByLabel('标题').fill('手机粘贴题图')
+  await editor.getByLabel('问题 / 题干附件', { exact: true }).setInputFiles(picture)
+  await expect(editor.getByAltText('问题 / 题干图片 1')).toBeVisible()
+  await editor.getByLabel('答案 / 解析', { exact: true }).fill('用纸笔独立完成，然后对照解析。')
+  await editor.getByRole('button', { name: '收进知识库' }).click()
+  await expect(editor).not.toBeVisible()
+  for (const route of ['/library', '/review?subject=math', '/settings?tab=api', '/statistics']) {
+    await page.goto(route)
+    await expect(page.locator('main h1')).toBeVisible()
+    if (route.startsWith('/review')) {
+      await page.getByRole('button', { name: /查看答案/ }).click()
+      await expect(page.locator('.revealed-answer .katex')).toBeVisible()
+      await page.screenshot({ path: test.info().outputPath('mobile-review.png'), fullPage: true, animations: 'disabled' })
+      await page.getByRole('button', { name: /良好/ }).click()
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
+  }
+  expect(errors).toEqual([])
+})

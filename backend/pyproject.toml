@@ -1,0 +1,29 @@
+[project]
+name = "shiyi"
+version = "1.0.0"
+description = "拾忆 · FSRS learning workspace"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<1", "uvicorn[standard]>=0.34,<1",
+  "sqlalchemy>=2.0.38,<3", "psycopg[binary]>=3.2,<4",
+  "pydantic-settings>=2.7,<3", "python-multipart>=0.0.20,<1",
+  "argon2-cffi>=23.1,<26", "fsrs==6.3.2", "pillow>=11.1,<13",
+  "alembic>=1.14,<2", "tzdata>=2025.1"
+]
+
+[dependency-groups]
+dev = ["pytest>=8.3,<10", "httpx>=0.28,<1", "ruff>=0.11,<1"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/conftest.py" = ["E402"]  # Configure the disposable database before importing the app.

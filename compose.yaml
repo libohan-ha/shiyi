@@ -1,0 +1,38 @@
+name: shiyi
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${SHIYI_BIND_HOST:-127.0.0.1}:${SHIYI_HTTP_PORT:-8765}:8765"
+    environment:
+      SHIYI_PUBLIC_URL: "${SHIYI_PUBLIC_URL:-http://127.0.0.1:8765}"
+      SHIYI_TRUSTED_HOSTS: "${SHIYI_TRUSTED_HOSTS:-localhost,127.0.0.1}"
+      SHIYI_SECURE_COOKIES: "${SHIYI_SECURE_COOKIES:-false}"
+      SHIYI_ALLOW_REGISTRATION: "${SHIYI_ALLOW_REGISTRATION:-false}"
+    volumes:
+      - shiyi_data:/app/backend/data
+    security_opt:
+      - no-new-privileges:true
+  caddy:
+    image: caddy:2-alpine
+    profiles: [https]
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      SHIYI_DOMAIN: "${SHIYI_DOMAIN:-localhost}"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+volumes:
+  shiyi_data:
+  caddy_data:
+  caddy_config:
