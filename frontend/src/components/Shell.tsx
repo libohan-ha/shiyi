@@ -55,5 +55,12 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate()
   useEffect(() => { const timer = setTimeout(() => setQuery(input), 250); return () => clearTimeout(timer) }, [input])
   const result = useQuery({ queryKey: ['items', 'search', query], queryFn: () => api<ItemPage>(`/items?q=${encodeURIComponent(query)}&page_size=8`), enabled: query.trim().length > 0 })
-  return <Modal title="找到那条记忆" onClose={onClose} className="search-modal"><div className="search-dialog-input"><Search size={21}/><input autoFocus value={input} onChange={e => setInput(e.target.value)} placeholder="搜索标题、正文、解析或标签…" aria-label="全局搜索"/>{result.isFetching && <Spinner/>}</div><div className="search-results">{!query ? <Empty title="知识，总有迹可循" description="输入一个关键词，找回你记录过的内容。" icon={<Command size={28}/>}/> : result.data?.items.length ? result.data.items.map(item => <button key={item.id} onClick={() => { navigate(`/items/${item.id}`); onClose() }}><BookOpen size={19}/><span><strong>{item.title}</strong><small>{subjectName(item.subject)} · {item.tags.join(' / ') || '未添加标签'}</small></span><ChevronRight size={17}/></button>) : !result.isFetching && <Empty title="暂时没有找到" description="换一个关键词，或检查一下拼写。"/>}</div><div className="search-footer"><Sparkles size={14}/>也可以搜索你在错题里写下的反思</div></Modal>
+  const openItem = (id: string) => {
+    const returnTo = `/library?${new URLSearchParams({ q: query })}`
+    // Keep the results in history so browser Back also restores the search.
+    navigate(returnTo)
+    navigate(`/items/${id}`, { state: { returnTo } })
+    onClose()
+  }
+  return <Modal title="找到那条记忆" onClose={onClose} className="search-modal"><div className="search-dialog-input"><Search size={21}/><input autoFocus value={input} onChange={e => setInput(e.target.value)} placeholder="搜索标题、正文、解析或标签…" aria-label="全局搜索"/>{result.isFetching && <Spinner/>}</div><div className="search-results">{!query ? <Empty title="知识，总有迹可循" description="输入一个关键词，找回你记录过的内容。" icon={<Command size={28}/>}/> : result.data?.items.length ? result.data.items.map(item => <button key={item.id} onClick={() => openItem(item.id)}><BookOpen size={19}/><span><strong>{item.title}</strong><small>{subjectName(item.subject)} · {item.tags.join(' / ') || '未添加标签'}</small></span><ChevronRight size={17}/></button>) : !result.isFetching && <Empty title="暂时没有找到" description="换一个关键词，或检查一下拼写。"/>}</div><div className="search-footer"><Sparkles size={14}/>也可以搜索你在错题里写下的反思</div></Modal>
 }

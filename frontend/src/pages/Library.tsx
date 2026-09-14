@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, ArrowRight, BookOpen, Check, ChevronRight, Filter, Grid2X2, Image, List, Plus, RotateCcw, Search, SquarePen, Trash2 } from 'lucide-react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { api, post, refreshLearning } from '../api'
 import { dateLabel, difficultyNames, kindNames, plainText, relativeDue, subjects } from '../lib'
@@ -11,6 +11,7 @@ import { Empty, ErrorState, Loading, PageHeading } from '../components/ui'
 
 export default function Library({ mistakes = false }: { mistakes?: boolean }) {
   const [params, setParams] = useSearchParams()
+  const location = useLocation()
   const [input, setInput] = useState(params.get('q') ?? '')
   const [view, setView] = useState<'grid' | 'list'>(mistakes ? 'grid' : 'list')
   const [filters, setFilters] = useState(false)
@@ -53,7 +54,7 @@ export default function Library({ mistakes = false }: { mistakes?: boolean }) {
     {query.isPending ? <Loading/> : query.error ? <ErrorState error={query.error} retry={() => void query.refetch()}/> : !query.data.items.length ? <div className="panel"><Empty title={input || params.size ? '这个角落，暂时还是空的' : mistakes ? '让每一道错题，都有收获' : '你的知识花园，等待第一颗种子'} description={input || params.size ? '试试其他关键词，或者放宽筛选条件。' : mistakes ? '粘贴题目截图，写下错因。下次再遇见时，你会更有把握。' : '记录一个知识点、一条单词，或者一个值得反复思考的问题。'} icon={mistakes ? <SquarePen size={32} strokeWidth={1.3}/> : <BookOpen size={32} strokeWidth={1.3}/>} action={<button className="button primary" onClick={() => edit({ subject: subject as Subject || undefined, mistake: mistakes })}><Plus size={17}/>{mistakes ? '收录第一道错题' : '记录一条新知'}</button>}/></div> : <>
       <div className={`knowledge-items ${view}`}>{query.data.items.map(item => { const s = subjects.find(s => s.id === item.subject)!; return <article className={`knowledge-card ${view}`} key={item.id}>
         {!deleted && <label className="card-select" title="选择这条内容"><input type="checkbox" aria-label={`选择 ${item.title}`} checked={selected.includes(item.id)} onChange={e => setSelected(ids => e.target.checked ? [...ids, item.id] : ids.filter(id => id !== item.id))}/><span><Check size={12}/></span></label>}
-        <Link to={`/items/${item.id}`} className="knowledge-card-link">
+        <Link to={`/items/${item.id}`} state={{ returnTo: location.pathname + location.search }} className="knowledge-card-link">
           {view === 'grid' && <div className={`knowledge-visual ${s.color}`}>{item.question_media.length ? <><img src={item.question_media[0].url} alt={`${item.title}题图`} loading="lazy"/><span className="image-count"><Image size={13}/>{item.question_media.length}</span></> : <><span className="visual-symbol">{s.symbol}</span><span className="visual-preview">{plainText(item.question) || '先留一个位置，等灵感到来'}</span></>}</div>}
           {view === 'list' && <div className={`list-subject-symbol ${s.color}`}>{item.question_media.length ? <img src={item.question_media[0].url} alt="题目缩略图"/> : s.symbol}</div>}
           <div className="knowledge-card-content"><div className="card-meta"><span className={`subject-badge ${s.color}`}>{s.name}</span><span>{chapters.data?.find(c => c.id === item.chapter_id)?.name ?? '未分章节'}</span>{item.is_mistake && <span className="mistake-badge">错题</span>}</div><h3>{item.title}</h3><p>{plainText(item.question) || '题目以图片形式保存'}</p><div className="card-tags">{item.tags.slice(0, 3).map(t => <span key={t}>#{t}</span>)}<span className="difficulty-tag">{difficultyNames[item.difficulty]}</span></div></div>
