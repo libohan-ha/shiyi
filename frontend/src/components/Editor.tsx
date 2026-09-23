@@ -8,7 +8,7 @@ import type { Chapter, Item, Media, Subject } from '../types'
 import { Content, Modal, Spinner } from './ui'
 import ImageEditor from './ImageEditor'
 
-type EditorOptions = { item?: Item; subject?: Subject; mistake?: boolean }
+type EditorOptions = { item?: Item; subject?: Subject; mistake?: boolean; onClosed?: () => void }
 const EditorContext = createContext<(options?: EditorOptions) => void>(() => {})
 export const useEditor = () => useContext(EditorContext)
 
@@ -24,7 +24,7 @@ function readEntryDefaults(key: string): EntryDefaults {
 
 export function EditorProvider({ children, userId }: { children: ReactNode; userId: string }) {
   const [options, setOptions] = useState<EditorOptions | null>(null)
-  return <EditorContext.Provider value={(options = {}) => setOptions(options)}>{children}{options && <Editor key={options.item?.id ?? 'new'} options={options} userId={userId} onClose={() => setOptions(null)}/>}</EditorContext.Provider>
+  return <EditorContext.Provider value={(options = {}) => setOptions(options)}>{children}{options && <Editor key={options.item?.id ?? 'new'} options={options} userId={userId} onClose={() => { const onClosed = options.onClosed; setOptions(null); onClosed?.() }}/>}</EditorContext.Provider>
 }
 
 export function ContentField({ label, text, media, onText, onMedia, placeholder, rows = 5, maxFiles = 12, maxLength = 60000, disabled = false, onUploadingChange }: {

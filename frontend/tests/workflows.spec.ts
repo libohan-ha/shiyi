@@ -271,3 +271,32 @@ test('中文检索、难度筛选、章节和学习偏好可保存', async ({ pa
   await expect(page.getByRole('heading', { name: '认真过的日子，有迹可循。' })).toBeVisible()
   await page.screenshot({ path: test.info().outputPath('statistics.png'), fullPage: true, animations: 'disabled' })
 })
+
+test('复习页面可以直接编辑和删除当前题目', async ({ page }) => {
+  await account(page)
+  const first = await item(page, { title: '二叉树的中序遍历' })
+  await page.goto('/review')
+  await expect(page.getByRole('heading', { name: '二叉树的中序遍历' })).toBeVisible()
+  // 编辑当前题目，保存后卡片内容即时更新
+  await page.getByRole('button', { name: '编辑这条内容' }).click()
+  const editor = page.getByRole('dialog', { name: '编辑这条记忆' })
+  await editor.getByLabel('标题').fill('二叉树的中序遍历 · 已订正')
+  await editor.getByRole('button', { name: '保存修改' }).click()
+  await expect(editor).not.toBeVisible()
+  await expect(page.getByRole('heading', { name: '二叉树的中序遍历 · 已订正' })).toBeVisible()
+  // 编辑后版本号已同步，评分不会冲突
+  await page.getByRole('button', { name: /查看答案/ }).click()
+  await page.getByRole('button', { name: /良好/ }).click()
+  await expect(page.getByText('今天的努力，已悄悄生根。')).toBeVisible()
+  expect((await (await page.request.get(`/api/v1/items/${first.id}/reviews`)).json()).total).toBe(1)
+  // 删除当前题目后直接推进队列
+  const second = await item(page, { title: '进程与线程的区别' })
+  await page.goto('/review')
+  await expect(page.getByRole('heading', { name: '进程与线程的区别' })).toBeVisible()
+  page.once('dialog', dialog => dialog.accept())
+  await page.getByRole('button', { name: '移入回收站' }).click()
+  await expect(page.getByText('已移入回收站')).toBeVisible()
+  await expect(page.getByText('此刻，一切正好。')).toBeVisible()
+  const deleted = await (await page.request.get(`/api/v1/items/${second.id}`)).json()
+  expect(deleted.status).toBe('deleted')
+})
