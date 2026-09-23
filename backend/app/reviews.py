@@ -29,7 +29,7 @@ def day_bounds(user, now=None):
 
 def scheduler_for(user, subject):
     retention = user.preferences.get("retention", {}).get(subject, .9)
-    return Scheduler(desired_retention=retention, enable_fuzzing=False), retention
+    return Scheduler(desired_retention=retention, enable_fuzzing=True), retention
 
 
 def state_values(card):

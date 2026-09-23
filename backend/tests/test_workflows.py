@@ -4,6 +4,7 @@ import zipfile
 from datetime import timedelta
 
 from fsrs import Card, Rating
+from fsrs.scheduler import FUZZ_RANGES
 from PIL import Image
 
 from app.config import settings
@@ -64,9 +65,26 @@ def test_real_fsrs_retry_conflict_and_undo(account, item):
     assert response.status_code == 201, response.text
     data = response.json()
     from datetime import datetime
+    reviewed_at = datetime.fromisoformat(data["review"]["reviewed_at"])
+    # Fuzzing draws a fresh random interval on every call, so replay the
+    # scheduler only to recover the exact interval it fuzzed around.
+    scheduler.enable_fuzzing = False
     expected, _ = scheduler.review_card(Card.from_dict(before), Rating.Good,
-                                        review_datetime=datetime.fromisoformat(data["review"]["reviewed_at"]), review_duration=60000)
-    assert data["review"]["due"] == expected.to_dict()["due"]
+                                        review_datetime=reviewed_at, review_duration=60000)
+    interval_days = (expected.due - reviewed_at).days
+    actual = datetime.fromisoformat(data["review"]["due"])
+    if interval_days < 2.5:  # The scheduler does not fuzz short intervals.
+        assert actual == expected.due
+    else:
+        # Mirror Scheduler._get_fuzzed_interval: the fuzzed interval is drawn
+        # from [min_ivl, max_ivl] but round() can push it one day past max_ivl.
+        delta = 1.0
+        for fuzz_range in FUZZ_RANGES:
+            delta += fuzz_range["factor"] * max(
+                min(float(interval_days), fuzz_range["end"]) - fuzz_range["start"], 0.0)
+        min_ivl = min(max(2, round(interval_days - delta)), round(interval_days + delta))
+        max_ivl = round(interval_days + delta) + 1
+        assert min_ivl <= (actual - reviewed_at).days <= max_ivl
     duplicate = rate(account, item).json()
     assert duplicate["already_recorded"] is True
     assert account.get(f"/api/v1/items/{item['id']}/reviews").json()["total"] == 1
