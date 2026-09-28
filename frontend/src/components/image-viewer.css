@@ -1,0 +1,21 @@
+.modal.image-viewer { width: min(1180px, calc(100% - 24px)); height: 92dvh; max-height: 92dvh; overflow: hidden; }
+.image-viewer > .modal-header { flex-shrink: 0; }
+.image-zoom-toolbar { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 12px; flex-shrink: 0; border-bottom: 1px solid var(--border); }
+.image-zoom-toolbar .icon-button { width: 40px; height: 40px; }
+.image-zoom-toolbar .button { min-height: 40px; font-size: 12px; }
+.image-zoom-value { min-width: 48px; text-align: center; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--green); }
+.image-zoom-viewport { flex: 1; min-height: 0; position: relative; overflow: hidden; background: #e8ecdf; touch-action: none; user-select: none; overscroll-behavior: contain; }
+.image-zoom-viewport:focus-visible { outline: 2px solid var(--green); outline-offset: -3px; }
+.image-zoom-viewport.can-drag { cursor: grab; }
+.image-zoom-viewport.is-dragging { cursor: grabbing; }
+.image-zoom-viewport > img { display: block; position: absolute; left: 50%; top: 50%; max-width: none; max-height: none; margin: 0; padding: 0; transform-origin: center; }
+.image-zoom-viewport > p { position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; font-size: 13px; text-align: center; }
+.image-viewer .image-zoom-hint { margin: 0; padding: 9px 12px; flex-shrink: 0; text-align: center; font-size: 11px; line-height: 1.6; color: var(--muted); }
+.image-viewer .lightbox-controls { flex-shrink: 0; padding: 0 12px 12px; }
+@media (max-width: 400px) {
+  .image-zoom-toolbar { gap: 4px; padding: 8px 6px; }
+  .image-zoom-toolbar .button { padding: 8px; font-size: 11px; }
+  .image-zoom-toolbar .icon-button { width: 36px; }
+  .image-zoom-value { min-width: 40px; }
+  .image-viewer .image-zoom-hint { font-size: 10px; }
+}
