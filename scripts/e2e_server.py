@@ -26,7 +26,12 @@ def main():
         import uvicorn
 
         sys.path.insert(0, str(root / "backend"))
+        from app import auth
         from app.database import engine
+
+        # Every browser test creates an isolated learner from the same IP. Avoid
+        # exhausting the auth quota in this disposable server; production keeps it.
+        auth.throttle = lambda request: None
 
         try:
             uvicorn.run("app.main:app", host="127.0.0.1", port=port, log_level="warning")
