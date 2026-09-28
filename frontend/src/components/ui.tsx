@@ -3,6 +3,7 @@ import { ArrowRight, Leaf, LoaderCircle, RotateCw, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { clsx } from 'clsx'
 import Markdown from 'react-markdown'
+import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
@@ -46,7 +47,7 @@ export function Content({ text, media = [], className = '' }: { text?: string; m
     return () => element.removeEventListener('wheel', wheel)
   }, [media.length])
   return <div className={`rich-content ${className}`}>
-    {text && <Markdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={{ a: props => <a {...props} target="_blank" rel="noopener noreferrer"/>, img: () => <span className="muted">[外部图片请通过附件上传]</span> }}>{text}</Markdown>}
+    {text && <Markdown remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]} rehypePlugins={[rehypeKatex]} components={{ a: props => <a {...props} target="_blank" rel="noopener noreferrer"/>, img: () => <span className="muted">[外部图片请通过附件上传]</span> }}>{text}</Markdown>}
     {media.length > 0 && <div ref={images} className="content-images">{media.map((m, i) => <button type="button" key={m.id} data-image-index={i} className="image-view" onClick={() => setViewer({ index: i, initialZoom: 1 })} aria-label={`放大图片 ${i + 1}`}><img src={m.url} alt={m.filename} loading="lazy"/><span>点击放大 · Ctrl＋滚轮缩放</span></button>)}</div>}
     {viewer !== null && media[viewer.index] && <ImageViewer media={media} index={viewer.index} initialZoom={viewer.initialZoom} onChange={index => setViewer({ index, initialZoom: 1 })} onClose={() => setViewer(null)}/>}
   </div>
