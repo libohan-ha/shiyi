@@ -3,6 +3,54 @@ import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { account, item, openEditor, password, picture } from './helpers'
 
+test('题干与答案的单次换行在保存、预览和复习中保留', async ({ page }) => {
+  await account(page)
+  const title = '保存后的答案保留换行'
+  const question = '看图判断方向。\n说明 A 和 B 的关系。'
+  const answerLines = 'D。\n从左向右看，A指向B。\n不要从右往左看了这类题。'
+  const answer = [answerLines, '**关键：** 按箭头方向判断，$A \\to B$。',
+    '1. 找到起点\n2. 找到终点', '| 起点 | 终点 |\n| --- | --- |\n| A | B |',
+    '```python\nif direction:\n    print("A -> B")\n```', '$$\nx^2 + y^2 = 1\n$$'].join('\n\n')
+  const editor = await openEditor(page)
+  await editor.getByLabel('标题').fill(title)
+  await editor.getByLabel('问题 / 题干', { exact: true }).fill(question)
+  await editor.getByLabel('答案 / 解析', { exact: true }).fill(answer)
+  await editor.getByRole('button', { name: '收进知识库' }).click()
+  await expect(editor).not.toBeVisible()
+  await page.getByRole('link').filter({ hasText: title }).click()
+  const id = page.url().split('/').at(-1)!
+  const saved = await (await page.request.get(`/api/v1/items/${id}`)).json()
+  expect(saved.question).toBe(question)
+  expect(saved.answer).toBe(answer)
+
+  const detailQuestion = page.locator('.detail-content').first().locator('.rich-content > p').first()
+  const detailAnswer = page.locator('.answer-panel .rich-content')
+  // innerText checks visible line breaks; toHaveText normalizes whitespace.
+  await expect.poll(() => detailQuestion.innerText()).toBe(question)
+  await expect.poll(() => detailAnswer.locator(':scope > p').first().innerText()).toBe(answerLines)
+  await expect(detailAnswer.locator('strong')).toHaveText('关键：')
+  await expect(detailAnswer.locator('ol > li')).toHaveCount(2)
+  await expect(detailAnswer.locator('table tbody tr')).toHaveCount(1)
+  await expect(detailAnswer.locator('.katex')).toHaveCount(2)
+  expect(await detailAnswer.locator('pre code').textContent()).toBe('if direction:\n    print("A -> B")\n')
+  await page.reload()
+  await expect.poll(() => detailAnswer.locator(':scope > p').first().innerText()).toBe(answerLines)
+  await page.locator('.answer-panel').screenshot({ path: test.info().outputPath('answer-line-breaks.png') })
+
+  await page.getByRole('button', { name: '编辑', exact: true }).click()
+  await expect(editor.getByLabel('问题 / 题干', { exact: true })).toHaveValue(question)
+  await expect(editor.getByLabel('答案 / 解析', { exact: true })).toHaveValue(answer)
+  const answerField = editor.locator('.content-field').filter({ has: page.getByLabel('答案 / 解析', { exact: true }) })
+  await answerField.getByRole('button', { name: '预览排版' }).click()
+  await expect.poll(() => editor.locator('.editor-preview .rich-content > p').first().innerText()).toBe(answerLines)
+  await editor.getByRole('button', { name: '关闭', exact: true }).click()
+
+  await page.getByRole('link', { name: '复习这条知识' }).click()
+  await expect.poll(() => page.locator('.review-question .rich-content > p').first().innerText()).toBe(question)
+  await page.getByRole('button', { name: /查看答案/ }).click()
+  await expect.poll(() => page.locator('.revealed-answer .rich-content > p').first().innerText()).toBe(answerLines)
+})
+
 test('网页创建账号、退出和重新登录', async ({ page }) => {
   const username = 'owner-' + randomUUID().slice(0, 8)
   await page.goto('/login')
