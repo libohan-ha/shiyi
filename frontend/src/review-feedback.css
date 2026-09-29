@@ -1,0 +1,66 @@
+.problem-feedback {
+  min-width: 0;
+  margin: 30px 0 22px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #f7f9f2;
+}
+.problem-feedback legend { padding: 0 7px; font-size: 16px; font-weight: 600; color: var(--ink); }
+.problem-feedback > .field-help { margin: 0 0 15px; line-height: 1.7; }
+.feedback-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.feedback-choices label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 48px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel);
+  font-size: 14px;
+  cursor: pointer;
+}
+.feedback-choices label.selected { border-color: #879d78; background: var(--sage); }
+.feedback-choices input { width: 17px; height: 17px; margin: 0; flex-shrink: 0; accent-color: var(--green); }
+.feedback-choices label:has(input:focus-visible) { outline: 2px solid var(--green); outline-offset: 3px; }
+.problem-feedback:disabled .feedback-choices label { opacity: .65; cursor: not-allowed; }
+.feedback-blocker { margin-top: 18px; }
+.feedback-blocker > .field { margin-bottom: 9px; }
+.feedback-blocker textarea { display: block; width: 100%; min-height: 90px; resize: vertical; }
+.feedback-blocker .field-help { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 0; line-height: 1.7; }
+.feedback-blocker .field-help span { white-space: nowrap; }
+.review-rating-area .next-day-help { margin: 13px 0 0; font-size: 12px; line-height: 1.7; color: var(--muted); }
+.saved-blocker-note { max-width: 460px; margin: 20px auto 0; padding: 15px 18px; border-radius: 12px; background: var(--sage); }
+.review-complete .saved-blocker-note p { margin: 0 0 8px; font-size: 13px; line-height: 1.8; }
+.saved-blocker-note .text-button { justify-content: center; }
+.derived-source-note { padding: 17px 20px; border: 1px solid var(--border); border-radius: 12px; background: #f3f6ed; overflow-wrap: anywhere; }
+.derived-source-note > strong { display: block; margin-top: 9px; font-size: 15px; }
+.derived-source-note p { margin: 9px 0 0; font-size: 13px; line-height: 1.8; color: var(--muted); white-space: pre-wrap; }
+.history-entry > div { min-width: 0; }
+.history-feedback { margin: 12px 0; }
+.history-feedback .feedback-result { display: inline-block; padding: 4px 8px; border-radius: 5px; color: var(--green); background: var(--sage); font-size: 11px; }
+.history-feedback .feedback-result.incomplete { color: #895438; background: var(--clay); }
+.history-feedback p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.history-feedback p b { display: block; margin-bottom: 4px; font-size: 11px; font-weight: 500; color: var(--muted); }
+.history-feedback .text-button { min-height: 38px; font-size: 12px; }
+.related-tasks { padding: 24px; }
+.related-tasks h2 { margin: 0 0 8px; font-size: 16px; font-weight: 600; }
+.related-tasks > .muted { font-size: 13px; line-height: 1.8; }
+.related-tasks ul { list-style: none; padding: 0; margin: 18px 0 0; }
+.related-tasks li { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; border-top: 1px solid var(--border); }
+.related-tasks li > div { min-width: 0; }
+.related-tasks li > div a { display: block; font-size: 14px; color: var(--green); overflow-wrap: anywhere; }
+.related-tasks li > div a:hover { text-decoration: underline; }
+.related-tasks li span { display: block; margin-top: 5px; font-size: 12px; color: var(--muted); }
+.related-tasks li > .button { flex-shrink: 0; }
+@media (max-width: 700px) {
+  .problem-feedback { margin: 23px 0 6px; padding: 14px; scroll-margin-bottom: calc(var(--review-dock-height, 200px) + 20px); }
+  .problem-feedback legend { font-size: 15px; }
+  .feedback-choices { gap: 8px; }
+  .feedback-choices label { padding: 11px 9px; font-size: 13px; }
+  .feedback-blocker .field-help { flex-direction: column; gap: 4px; }
+  .review-dock .next-day-help { margin-top: 9px; font-size: 11px; line-height: 1.5; text-align: left; }
+  .related-tasks { padding: 19px; }
+  .derived-source-note { padding: 15px; }
+}

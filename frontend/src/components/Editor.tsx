@@ -8,7 +8,7 @@ import type { Chapter, Item, Media, Subject } from '../types'
 import { Content, Modal, Spinner } from './ui'
 import ImageEditor from './ImageEditor'
 
-type EditorOptions = { item?: Item; subject?: Subject; mistake?: boolean; onClosed?: () => void }
+type EditorOptions = { item?: Item; subject?: Subject; mistake?: boolean; sourceItem?: Item; blocker?: string; onClosed?: () => void }
 const EditorContext = createContext<(options?: EditorOptions) => void>(() => {})
 export const useEditor = () => useContext(EditorContext)
 
@@ -24,7 +24,7 @@ function readEntryDefaults(key: string): EntryDefaults {
 
 export function EditorProvider({ children, userId }: { children: ReactNode; userId: string }) {
   const [options, setOptions] = useState<EditorOptions | null>(null)
-  return <EditorContext.Provider value={(options = {}) => setOptions(options)}>{children}{options && <Editor key={options.item?.id ?? 'new'} options={options} userId={userId} onClose={() => { const onClosed = options.onClosed; setOptions(null); onClosed?.() }}/>}</EditorContext.Provider>
+  return <EditorContext.Provider value={(options = {}) => setOptions(options)}>{children}{options && <Editor key={options.item?.id ?? (options.sourceItem ? JSON.stringify([options.sourceItem.id, options.blocker?.trim()]) : 'new')} options={options} userId={userId} onClose={() => { const onClosed = options.onClosed; setOptions(null); onClosed?.() }}/>}</EditorContext.Provider>
 }
 
 export function ContentField({ label, text, media, onText, onMedia, placeholder, rows = 5, maxFiles = 12, maxLength = 60000, disabled = false, onUploadingChange }: {
@@ -88,12 +88,17 @@ export function ContentField({ label, text, media, onText, onMedia, placeholder,
 
 function Editor({ options, userId, onClose }: { options: EditorOptions; userId: string; onClose: () => void }) {
   const old = options.item
-  const storageKey = `shiyi-draft-${userId}`
+  const sourceItem = old ? undefined : options.sourceItem
+  const sourceBlocker = options.blocker?.trim() ?? ''
+  // Derived drafts belong to one source and one historical blocker, never to ordinary entry.
+  const storageKey = `shiyi-draft-${userId}${sourceItem ? `-source-${JSON.stringify([sourceItem.id, sourceBlocker])}` : ''}`
   const defaultsKey = `shiyi-entry-defaults-${userId}`
   const [entryDefaults, setEntryDefaults] = useState(() => readEntryDefaults(defaultsKey))
-  const initialSubject = old?.subject ?? options.subject ?? entryDefaults.subject ?? '408'
-  const defaultForm = { title: old?.title ?? '', subject: initialSubject, chapter_id: old ? old.chapter_id ?? '' : entryDefaults.chapters[initialSubject] ?? '',
-    kind: old?.kind ?? (options.mistake ? 'problem' : initialSubject === 'english' ? 'vocabulary' : 'concept'), question: old?.question ?? '', answer: old?.answer ?? '',
+  const initialSubject = old?.subject ?? sourceItem?.subject ?? options.subject ?? entryDefaults.subject ?? '408'
+  const defaultForm = { title: old?.title ?? (sourceItem ? `小任务 · ${(sourceBlocker || sourceItem.title).slice(0, 100)}` : ''), subject: initialSubject,
+    chapter_id: old ? old.chapter_id ?? '' : sourceItem ? sourceItem.chapter_id ?? '' : entryDefaults.chapters[initialSubject] ?? '',
+    kind: old?.kind ?? (sourceItem ? 'concept' : options.mistake ? 'problem' : initialSubject === 'english' ? 'vocabulary' : 'concept'),
+    question: old?.question ?? (sourceItem ? `针对「${sourceBlocker || sourceItem.title}」，需要掌握的关键概念或步骤是什么？` : ''), answer: old?.answer ?? '',
     difficulty: old?.difficulty ?? 'medium', tags: old?.tags.join('，') ?? '', source: old?.source ?? '',
     is_mistake: old?.is_mistake ?? options.mistake ?? false, mistake_reason: old?.mistake_reason ?? '', takeaway: old?.takeaway ?? '',
     question_media: old?.question_media ?? [] as Media[], answer_media: old?.answer_media ?? [] as Media[] }
@@ -155,6 +160,7 @@ function Editor({ options, userId, onClose }: { options: EditorOptions; userId: 
     try {
       const payload = { ...form, chapter_id: form.chapter_id || null, tags: form.tags.split(/[,，]/).map(t => t.trim()).filter(Boolean),
         question_media: form.question_media.map(m => m.id), answer_media: form.answer_media.map(m => m.id), status,
+        ...(sourceItem ? { source_item_id: sourceItem.id } : {}),
         ...(old ? { expected_version: old.version } : {}) }
       if (old) await patch(`/items/${old.id}`, payload)
       else await post('/items', payload)
@@ -172,12 +178,13 @@ function Editor({ options, userId, onClose }: { options: EditorOptions; userId: 
       } else onClose()
     } catch (error) { toast.error((error as Error).message) } finally { saveLock.current = false; setBusy(false) }
   }
-  return <Modal title={old ? '编辑这条记忆' : form.is_mistake ? '收录一道错题' : '种下一颗知识的种子'} onClose={close} className="editor-modal">
+  return <Modal title={old ? '编辑这条记忆' : sourceItem ? '从卡点提炼小任务' : form.is_mistake ? '收录一道错题' : '种下一颗知识的种子'} onClose={close} className="editor-modal">
     <div className="editor-top"><span className="eyebrow">{old ? 'REFINE YOUR KNOWLEDGE' : 'A SMALL STEP, A LASTING MEMORY'}</span><div className="tabs"><button disabled={busy || hasUpload} className={tab === 'content' ? 'active' : ''} onClick={() => setTab('content')}>题目与答案</button><button disabled={busy || hasUpload} className={tab === 'notes' ? 'active' : ''} onClick={() => setTab('notes')}>复盘与标记</button></div></div>
     <div className="modal-body editor-body"><fieldset className="editor-fields" disabled={busy}>
+      {sourceItem && <div className="derived-source-note"><span className="eyebrow">从一道题，回到一个小问题</span><strong>{sourceItem.title}</strong>{sourceBlocker && <p>本次卡点：{sourceBlocker}</p>}<p>来源原题会自动关联，科目与原题保持一致。请把下方题干改成可独立回答的问题，再补上答案；也可以先存为草稿。小任务有自己的复习进度，不继承原题评分。</p></div>}
       {savedDraft && <div className="draft-banner"><span>上次还有一条未完成的记录</span><button className="text-button" onClick={() => { try { setForm(JSON.parse(savedDraft)); setSavedDraft(null); toast.success('已恢复上次内容') } catch { setSavedDraft(null) } }}>恢复内容</button><button className="icon-button" aria-label="忽略上次草稿" onClick={() => { setSavedDraft(null); localStorage.removeItem(storageKey) }}><X size={15}/></button></div>}
       {tab === 'content' ? <>
-        <div className="subject-picker">{subjects.map(s => <button key={s.id} className={`subject-choice ${s.color} ${form.subject === s.id ? 'selected' : ''}`} onClick={() => setForm(f => ({ ...f, subject: s.id, chapter_id: entryDefaults.chapters[s.id] ?? '', kind: s.id === 'english' && !f.is_mistake ? 'vocabulary' : f.kind === 'vocabulary' ? 'concept' : f.kind }))}><span aria-hidden="true">{s.symbol}</span>{s.name}{form.subject === s.id && <Check size={15}/>}</button>)}</div>
+        <div className="subject-picker">{subjects.map(s => <button key={s.id} disabled={!!sourceItem} className={`subject-choice ${s.color} ${form.subject === s.id ? 'selected' : ''}`} onClick={() => setForm(f => ({ ...f, subject: s.id, chapter_id: entryDefaults.chapters[s.id] ?? '', kind: s.id === 'english' && !f.is_mistake ? 'vocabulary' : f.kind === 'vocabulary' ? 'concept' : f.kind }))}><span aria-hidden="true">{s.symbol}</span>{s.name}{form.subject === s.id && <Check size={15}/>}</button>)}</div>
         <label className="field">标题 <span className="required">*</span><input ref={titleRef} autoFocus value={form.title} maxLength={240} onChange={e => update('title', e.target.value)} placeholder="例如：Cache 映射方式与地址划分"/></label>
         <div className="form-row"><label className="field">章节<select value={form.chapter_id} onChange={e => update('chapter_id', e.target.value)}><option value="">暂不分类</option>{chapters.data?.filter(c => c.subject === form.subject).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label className="field">内容类型<select value={form.kind} onChange={e => update('kind', e.target.value)}><option value="concept">知识点</option><option value="problem">练习题</option><option value="vocabulary">单词</option><option value="expression">表达</option></select></label><button className="icon-button add-chapter" aria-label="新增章节" onClick={() => setChapterOpen(!chapterOpen)}><Plus size={18}/></button></div>
         {chapterOpen && <div className="inline-create"><input value={newChapter} aria-label="新章节名称" placeholder="新章节名称" onChange={e => setNewChapter(e.target.value)}/><button className="button secondary small" disabled={!newChapter.trim()} onClick={async () => { try { const c = await post<Chapter>('/chapters', { subject: form.subject, name: newChapter }); await chapters.refetch(); update('chapter_id', c.id); setChapterOpen(false); setNewChapter('') } catch (e) { toast.error((e as Error).message) } }}>添加</button></div>}
@@ -191,6 +198,6 @@ function Editor({ options, userId, onClose }: { options: EditorOptions; userId: 
         <label className="field">来源<input value={form.source} onChange={e => update('source', e.target.value)} placeholder="书名 / 页码 / 真题年份 / 链接"/></label>
       </>}
     </fieldset></div>
-    <div className="modal-footer entry-footer"><span className="save-note" role="status"><Save size={14}/>{hasUpload ? '图片处理中，请稍候…' : old ? '保存后保留已有复习进度' : dirty ? draftState === 'saved' ? '输入内容已在本机暂存' : draftState === 'unavailable' ? '请及时保存为草稿' : '正在本机暂存…' : entryNumber ? `本次已连续收录 ${entryNumber} 条，可继续填写` : '科目与章节会在保存后记住'}</span><div><button className="button secondary" disabled={busy || hasUpload} onClick={() => void save('draft')}>存为草稿</button>{!old && <button className="button secondary continue-entry" disabled={busy || hasUpload} onClick={() => void save('active', true)}>保存并录下一题<ArrowRight size={16}/></button>}<button className="button primary" disabled={busy || hasUpload} onClick={() => void save(old?.status === 'suspended' ? 'suspended' : 'active')}>{busy ? <Spinner/> : old ? <Check size={16}/> : <Plus size={16}/>} {old ? '保存修改' : '收进知识库'}</button></div></div>
+    <div className="modal-footer entry-footer"><span className="save-note" role="status"><Save size={14}/>{hasUpload ? '图片处理中，请稍候…' : old ? '保存后保留已有复习进度' : dirty ? draftState === 'saved' ? '输入内容已在本机暂存' : draftState === 'unavailable' ? '请及时保存为草稿' : '正在本机暂存…' : entryNumber ? `本次已连续收录 ${entryNumber} 条，可继续填写` : '科目与章节会在保存后记住'}</span><div><button className="button secondary" disabled={busy || hasUpload} onClick={() => void save('draft')}>存为草稿</button>{!old && !sourceItem && <button className="button secondary continue-entry" disabled={busy || hasUpload} onClick={() => void save('active', true)}>保存并录下一题<ArrowRight size={16}/></button>}<button className="button primary" disabled={busy || hasUpload} onClick={() => void save(old?.status === 'suspended' ? 'suspended' : 'active')}>{busy ? <Spinner/> : old ? <Check size={16}/> : <Plus size={16}/>} {old ? '保存修改' : '收进知识库'}</button></div></div>
   </Modal>
 }

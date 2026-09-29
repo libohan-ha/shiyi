@@ -69,6 +69,7 @@ curl -fS -X POST "$SHIYI_API_URL/items/ITEM_ID/restore" \
 | `chapter_id` | 本账号、同科目章节的 ID，或 `null` |
 | `tags` | 最多 20 个标签，每个不超过 40 字符 |
 | `source` | 来源文本或链接，最多 500 字符 |
+| `source_item_id` | 来源原题 ID 或 `null`；须同账号、同科目，来源类型为 `problem`，不能指向自己。PATCH 省略保留，`null` 解除关联 |
 | `is_mistake` | 是否进入错题本 |
 | `mistake_reason` / `takeaway` | 错因与复盘提醒，各最多 10000 字符 |
 | `status` | `active`、`draft`、`suspended` |
@@ -77,7 +78,7 @@ curl -fS -X POST "$SHIYI_API_URL/items/ITEM_ID/restore" \
 
 非草稿至少需要“问题文字或题图”和“答案文字或答案图”。暂时没有答案可用 `status=draft`；暂停复习用 `status=suspended`。
 
-列表返回 `{items, total, page, page_size}`，支持 `subject`、`q`、`chapter_id`、`tag`、`is_mistake`、`difficulty`、`kind`、`external_id`、`status`、`state` 和 `sort`。`status=all` 默认排除回收站；`state` 可选 `new/due/learning/review/relearning`；`sort` 可选 `updated/created/due/title`。每页上限 100。
+列表返回 `{items, total, page, page_size}`，支持 `subject`、`q`、`chapter_id`、`tag`、`is_mistake`、`difficulty`、`kind`、`external_id`、`source_item_id`、`status`、`state` 和 `sort`。`status=all` 默认排除回收站；`state` 可选 `new/due/learning/review/relearning`；`sort` 可选 `updated/created/due/title`。每页上限 100。
 
 ## 上传图片
 
@@ -125,11 +126,23 @@ curl -fS "$SHIYI_API_URL/media" \
 
 `rating` 为 `again/hard/good/easy`。`duration_ms` 为实际用时，范围 0–86400000；本次解答最多 30000 字符、8 张图片。需要提示或答案才能完成时记 `again`；独立完成但吃力才是 `hard`。
 
+额外反馈字段：
+
+| 字段 | 含义 |
+| --- | --- |
+| `expected_item_version` | 可选，来自 Item 的 `version`，不是 `schedule.version`；传入后若题目被编辑则返回 409。网页会传入，外部新调用也建议传入 |
+| `independent_completed` | 仅用于 `kind=problem` 的整题：严格 JSON `true/false`；省略或 `null` 表示未明确记录，不从评分倒推 |
+| `blocker` | 本次主要卡点，最多 2000 字符；未独立完成时必填，其他情况应为空 |
+
+`independent_completed=false` 必须搭配 `rating=again`；`true` 必须搭配 `hard/good/easy`。非整题不能提交明确的整题结果。旧调用不传新增反馈字段仍可使用。
+
+**次日规则**：`again/hard` 的 FSRS 原始间隔不足 24 小时时，`due` 调整到学习时区的下一日 00:00；其他评分或至少一天的间隔不变。预览每档增加 `next_day` 布尔值，`true` 时页面显示“明天”，`interval_seconds` 仍是距离实际 `due` 的秒数。此规则只修改未来安排，不改真实评分时间和记忆参数，不重排历史卡片。
+
 响应为 `{already_recorded, review}`，其中 `review.due` 为已保存的真实下次时间。如果网络超时或响应丢失，应保留原来的 `request_id` 和**完整请求体**重试。相同请求重复提交会返回既有记录，不会再次评分；同一 ID 搭配不同内容会返回 409。
 
 不要仅为了重试生成新的请求 ID。如果因版本冲突收到 409，重新读取题目状态，再由用户判断是否开始一次新的尝试。
 
-- `GET /items/{id}/reviews?page=1`：历史列表，每页 30 条，包含撤销标记和本次解答。
+- `GET /items/{id}/reviews?page=1`：历史列表，每页 30 条，包含撤销标记、本次解答、`independent_completed` 和 `blocker`。
 - `POST /reviews/{review_id}/undo`：撤销该题最近一次、10 分钟内的评分。原始记录保留并标记 `undone`，记忆状态恢复，版本号继续递增。
 
 ## 其他接口
@@ -144,6 +157,24 @@ curl -fS "$SHIYI_API_URL/media" \
 | GET | `/api/health` | 服务和数据库连通状态，注意此路径不在 `/api/v1` 下 |
 
 `GET /stats` 的 `today.new_available` 是三科共用额度下实际可新学的总数，与 `/reviews/due` 一致。`today.estimated_minutes` 估算当前到期内容加本轮新学内容的时长，`today.estimate_from_history` 表示本轮涉及的科目是否都有足够用时记录。每科使用近 30 天最近 30 次有效用时的中位数，至少需要 3 次；不足时暂按 408 每条 90 秒、数学 180 秒、英语 30 秒粗估。`subjects[].overdue` 为各科逾期条数。这些字段均为展示信息，不修改复习时间。
+
+## 学习结果与备份兼容
+
+`GET /stats` 新增以下字段，原混合评分统计仍保留：
+
+| 字段 | 口径 |
+| --- | --- |
+| `today.unique_items` | 今天有有效评分的不同条目数，同日重复只算一次 |
+| `today.weak_points_covered` | 今天复习过、当前有 `source_item_id` 且未删除的小任务数，不代表已掌握 |
+| `learning.delayed_reviews` / `delayed_successes` / `delayed_retention` | 近30天跨日首答次数、成功次数与比率，无样本比率为 `null` |
+| `learning.delayed_failures` / `delayed_failure_count` | 活跃条目中最近一次跨日首答为 again 的内容，含 `blocker`、`reviewed_at`、`elapsed_days`，按该首答时间倒序最多10条，以及未截断总数 |
+| `learning.covered_weak_points` | 今天覆盖的小任务，最多10条 |
+| `learning.problems_attempted` / `problems_completed` | 今天未删除条目中有明确整题反馈的不同题目数、按最后一次明确反馈独立完成的题目数 |
+| `learning.problem_results` | 上述整题结果，含本次反馈和时间，按时间倒序最多10条 |
+
+跨日以学习时区的自然日为界，而非满24小时；每题每日只取第一条未撤销评分，且其 `before.last_review` 位于更早学习日。初学、当日重复、撤销和未来时间记录不计入该指标。`hard/good/easy` 都算回忆成功。今日整题统计不会给旧记录补造 `independent_completed`；本次卡点不会改写题目原有的 `mistake_reason`。来源任务有独立记忆状态，原题评分不传播。
+
+新导出的 ZIP 使用 `version=2`，包含原题关联与本次反馈；导入兼容 v1/v2。旧备份缺字段时恢复为 `source_item_id=null`、`independent_completed=null`、`blocker=""`。导入始终添加副本，原题关系只在本次备份的条目之间重新映射，不能引用现有库中的原 ID；悬空或无效关系会整体回滚。新版备份不能导入旧版程序，以免静默丢失反馈与关联。升级前建议先导出一份备份；启动脚本会自动执行增量迁移，不会批量重排原有复习。
 
 ## 错误处理
 

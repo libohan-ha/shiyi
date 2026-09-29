@@ -1,5 +1,5 @@
 from collections import Counter, defaultdict
-from datetime import timedelta
+from datetime import datetime, timedelta
 from math import ceil
 from statistics import median
 from zoneinfo import ZoneInfo
@@ -17,6 +17,55 @@ from .security import require
 router = APIRouter(prefix="/api/v1", tags=["学习统计"])
 
 
+def learning_summary(recent, items, start, zone):
+    today = start.astimezone(zone).date()
+    item_map = {item.id: item for item in items}
+    today_ids = set()
+    problems = {}
+    seen_days = set()
+    delayed = []
+    latest_delayed = {}
+    for review, _ in sorted(recent, key=lambda row: (row[0].reviewed_at, row[0].card_version, row[0].id)):
+        day = review.reviewed_at.astimezone(zone).date()
+        if day == today:
+            today_ids.add(review.item_id)
+            if review.independent_completed is not None:
+                problems[review.item_id] = review
+        if review.reviewed_at < start - timedelta(days=29):
+            continue
+        key = (review.item_id, day)
+        if key in seen_days:
+            continue
+        seen_days.add(key)
+        previous = review.before.get("last_review")
+        if review.was_new or not previous:
+            continue
+        previous_day = datetime.fromisoformat(previous).astimezone(zone).date()
+        if previous_day < day:
+            delayed.append(review)
+            latest_delayed[review.item_id] = (review, (day - previous_day).days)
+    covered = [item for item in items if item.id in today_ids and item.source_item_id]
+    failures = [(item_map[mid], review, gap) for mid, (review, gap) in latest_delayed.items()
+                if review.rating == 1 and mid in item_map and item_map[mid].status == "active"]
+    failures.sort(key=lambda value: value[1].reviewed_at, reverse=True)
+    results = [(item_map[mid], review) for mid, review in problems.items() if mid in item_map]
+    results.sort(key=lambda value: value[1].reviewed_at, reverse=True)
+    successes = sum(review.rating > 1 for review in delayed)
+    return ({"unique_items": len(today_ids), "weak_points_covered": len(covered)},
+            {"delayed_reviews": len(delayed), "delayed_successes": successes,
+             "delayed_retention": successes / len(delayed) if delayed else None,
+             "delayed_failure_count": len(failures),
+             "delayed_failures": [{**item_data(item, include_answer=False), "blocker": review.blocker,
+                                   "reviewed_at": review.reviewed_at, "elapsed_days": gap}
+                                  for item, review, gap in failures[:10]],
+             "covered_weak_points": [item_data(item, include_answer=False) for item in covered[:10]],
+             "problems_attempted": len(results),
+             "problems_completed": sum(review.independent_completed for _, review in results),
+             "problem_results": [{**item_data(item, include_answer=False),
+                                  "independent_completed": review.independent_completed, "blocker": review.blocker,
+                                  "reviewed_at": review.reviewed_at} for item, review in results[:10]]})
+
+
 @router.get("/stats")
 def stats(user: User = Depends(require("read")), db: Session = Depends(get_db)):
     now = utcnow()
@@ -25,7 +74,9 @@ def stats(user: User = Depends(require("read")), db: Session = Depends(get_db)):
     today = now.astimezone(zone).date()
     items = db.scalars(select(Item).where(Item.user_id == user.id, Item.status != "deleted")).unique().all()
     recent = db.execute(select(Review, Item.subject).join(Item).where(
-        Review.user_id == user.id, Review.undone.is_(False), Review.reviewed_at >= start - timedelta(days=365))).all()
+        Review.user_id == user.id, Review.undone.is_(False), Review.reviewed_at >= start - timedelta(days=365),
+        Review.reviewed_at <= now)).all()
+    today_learning, learning = learning_summary(recent, items, start, zone)
     days = Counter()
     daily_minutes = defaultdict(float)
     subject_reviews = defaultdict(list)
@@ -91,7 +142,8 @@ def stats(user: User = Depends(require("read")), db: Session = Depends(get_db)):
                for offset in range((today - heatmap_start).days + 1)]
     lapses = Counter(r.item_id for r, _ in recent if r.rating == 1 and r.reviewed_at >= start - timedelta(days=29))
     weak = sorted([i for i in active if lapses[i.id]], key=lambda i: -lapses[i.id])[:5]
-    return {"today": {"reviews": today_count, "minutes": round(today_minutes, 1), "due": len(due_items),
+    return {"learning": learning,
+            "today": {**today_learning, "reviews": today_count, "minutes": round(today_minutes, 1), "due": len(due_items),
                        "overdue": sum(i.card.due < start for i in due_items),
                        "new": sum(not i.card.last_review for i in active),
                        "new_available": min(allowance, len(new_items)),

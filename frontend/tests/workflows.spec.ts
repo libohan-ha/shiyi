@@ -106,6 +106,7 @@ test('图片错题的录入、评分、撤销、编辑、暂停与恢复', async
   await expect(page.getByLabel('我的解答', { exact: true })).toHaveValue(/展开/)
   await page.getByRole('button', { name: /查看答案/ }).click()
   await expect(page.locator('.revealed-answer .katex').first()).toBeVisible()
+  await page.getByRole('radio', { name: '已独立完成', exact: true }).check()
   await page.screenshot({ path: test.info().outputPath('review-with-image.png'), fullPage: true, animations: 'disabled' })
   await page.getByRole('button', { name: /良好/ }).click()
   await expect(page.getByText('今天的努力，已悄悄生根。')).toBeVisible()
@@ -120,6 +121,7 @@ test('图片错题的录入、评分、撤销、编辑、暂停与恢复', async
   finally { finishUndoRefresh() }
   await expect(page.getByRole('heading', { name: '用定义求平方函数的导数' })).toBeVisible()
   await page.getByRole('button', { name: /查看答案/ }).click()
+  await page.getByRole('radio', { name: '已独立完成', exact: true }).check()
   await page.getByRole('button', { name: /轻松/ }).click()
   await expect(page.getByText('今天的努力，已悄悄生根。')).toBeVisible()
   history = await (await page.request.get(`/api/v1/items/${id}/reviews`)).json()

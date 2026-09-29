@@ -39,7 +39,7 @@ def item_data(item, include_answer=True):
     card = item.card
     data = {key: getattr(item, key) for key in (
         "id", "title", "subject", "chapter_id", "kind", "question", "difficulty", "tags", "source",
-        "is_mistake", "status", "external_id", "version", "created_at", "updated_at")}
+        "is_mistake", "status", "external_id", "source_item_id", "version", "created_at", "updated_at")}
     data["question_media"] = [media_data(a.media) for a in sorted(item.attachments, key=lambda a: a.position) if a.role == "question"]
     if include_answer:
         data.update(answer=item.answer, mistake_reason=item.mistake_reason, takeaway=item.takeaway)
@@ -62,6 +62,10 @@ def check_media(db, user_id, ids):
 
 
 def validate_item(db, user, body):
+    if body.source_item_id:
+        source = db.get(Item, body.source_item_id)
+        if not source or source.user_id != user.id or source.subject != body.subject or source.kind != "problem":
+            raise HTTPException(422, "小任务的来源必须是同一账号、同一科目的原题")
     if body.chapter_id:
         chapter = db.get(Chapter, body.chapter_id)
         if not chapter or chapter.user_id != user.id or chapter.subject != body.subject:
@@ -129,7 +133,8 @@ def tag_match(db, value, exact=False):
 def list_items(subject: Subject | None = None, q: str = Query("", max_length=200), chapter_id: str | None = None,
                tag: str | None = Query(None, max_length=40), is_mistake: bool | None = None,
                difficulty: Difficulty | None = None, kind: ItemKind | None = None,
-               external_id: str | None = Query(None, max_length=200), status: str = "all", state: str | None = None,
+               external_id: str | None = Query(None, max_length=200), source_item_id: str | None = None,
+               status: str = "all", state: str | None = None,
                sort: str = "updated", page: int = Query(1, ge=1), page_size: int = Query(24, ge=1, le=100),
                user: User = Depends(require("read")), db: Session = Depends(get_db)):
     stmt = select(Item).join(CardState).where(Item.user_id == user.id)
@@ -151,6 +156,8 @@ def list_items(subject: Subject | None = None, q: str = Query("", max_length=200
         stmt = stmt.where(Item.kind == kind)
     if external_id is not None:
         stmt = stmt.where(Item.external_id == external_id)
+    if source_item_id is not None:
+        stmt = stmt.where(Item.source_item_id == source_item_id)
     if q:
         pattern = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
         stmt = stmt.where(or_(tag_match(db, pattern), *[col.ilike(pattern, escape="\\") for col in
@@ -204,6 +211,11 @@ def edit_item(item_id: str, body: ItemPatch, user: User = Depends(require("write
     except ValidationError as error:
         raise HTTPException(422, str(error))
     validate_item(db, user, data)
+    if data.source_item_id == item.id:
+        raise HTTPException(422, "小任务不能引用自己作为原题")
+    if data.subject != item.subject or data.kind != "problem":
+        if db.scalar(select(Item.id).where(Item.source_item_id == item.id).limit(1)):
+            raise HTTPException(422, "这道原题已关联小任务，请先解除关联再改变科目或类型")
     expected = data.expected_version if data.expected_version is not None else item.version
     result = db.execute(update(Item).where(Item.id == item.id, Item.version == expected).values(version=expected + 1))
     if result.rowcount != 1:

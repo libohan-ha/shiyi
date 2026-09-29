@@ -32,6 +32,14 @@ def scheduler_for(user, subject):
     return Scheduler(desired_retention=retention, enable_fuzzing=True), retention
 
 
+def schedule_review(scheduler, user, card, rating, now, duration=None):
+    card, log = scheduler.review_card(card, rating, review_datetime=now, review_duration=duration)
+    next_day = rating in (Rating.Again, Rating.Hard) and card.due - now < timedelta(days=1)
+    if next_day:
+        card.due = day_bounds(user, now)[1]
+    return card, log, next_day
+
+
 def state_values(card):
     return {"data": card.to_dict(), "due": card.due, "last_review": card.last_review,
             "stability": card.stability, "difficulty": card.difficulty, "state": int(card.state)}
@@ -71,20 +79,25 @@ def preview(item_id: str, user: User = Depends(require("read")), db: Session = D
     now = utcnow()
     options = {}
     for name, value in RATINGS.items():
-        card, _ = scheduler.review_card(Card.from_dict(item.card.data), Rating(value), review_datetime=now)
-        options[name] = {"due": card.due, "interval_seconds": (card.due - now).total_seconds()}
+        card, _, next_day = schedule_review(scheduler, user, Card.from_dict(item.card.data), Rating(value), now)
+        options[name] = {"due": card.due, "interval_seconds": (card.due - now).total_seconds(), "next_day": next_day}
     return {"ratings": options, "version": item.card.version}
 
 
 def review_data(review):
     return {"id": review.id, "item_id": review.item_id, "rating": review.rating, "reviewed_at": review.reviewed_at,
             "duration_ms": review.duration_ms, "answer_text": review.answer_text, "answer_media": review.answer_media,
-            "undone": review.undone, "due": review.after.get("due"), "was_new": review.was_new}
+            "undone": review.undone, "due": review.after.get("due"), "was_new": review.was_new,
+            "independent_completed": review.independent_completed, "blocker": review.blocker}
 
 
 @router.post("/items/{item_id}/reviews", status_code=201)
 def submit_review(item_id: str, body: ReviewInput, user: User = Depends(require("review")), db: Session = Depends(get_db)):
     payload = {**body.model_dump(), "item_id": item_id}
+    # Keep retries of pre-upgrade requests compatible with their stored payload hashes.
+    for field in ("expected_item_version", "independent_completed", "blocker"):
+        if payload[field] is None or payload[field] == "":
+            del payload[field]
     payload_hash = hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
     existing = db.scalar(select(Review).where(Review.user_id == user.id, Review.request_id == body.request_id))
     if existing:
@@ -102,12 +115,23 @@ def submit_review(item_id: str, body: ReviewInput, user: User = Depends(require(
         raise HTTPException(409, "这条内容当前未加入复习")
     if item.card.version != body.expected_version:
         raise HTTPException(409, "这道题已在其他窗口复习，请刷新后继续")
+    if body.expected_item_version is not None and item.version != body.expected_item_version:
+        raise HTTPException(409, "题目内容已更新，请刷新后重新作答")
+    if body.independent_completed is not None:
+        if item.kind != "problem":
+            raise HTTPException(422, "只有整题可以记录是否独立完成")
+        if body.independent_completed != (body.rating != "again"):
+            raise HTTPException(422, "未独立完成请选择忘记；困难表示独立完成但费力")
+        if not body.independent_completed and not body.blocker:
+            raise HTTPException(422, "请写下这次未完成的主要卡点")
+    if body.blocker and body.independent_completed is not False:
+        raise HTTPException(422, "主要卡点用于记录未独立完成的整题")
     check_media(db, user.id, body.answer_media)
     scheduler, retention = scheduler_for(user, item.subject)
     now = utcnow()
     before = item.card.data
-    card, log = scheduler.review_card(Card.from_dict(before), Rating(RATINGS[body.rating]),
-                                      review_datetime=now, review_duration=body.duration_ms)
+    card, log, _ = schedule_review(scheduler, user, Card.from_dict(before), Rating(RATINGS[body.rating]),
+                                   now, body.duration_ms)
     next_version = body.expected_version + 1
     result = db.execute(update(CardState).where(CardState.item_id == item.id,
                         CardState.version == body.expected_version).values(**state_values(card), version=next_version))
@@ -117,7 +141,8 @@ def submit_review(item_id: str, body: ReviewInput, user: User = Depends(require(
                     payload_hash=payload_hash, rating=RATINGS[body.rating], reviewed_at=now, duration_ms=body.duration_ms,
                     answer_text=body.answer_text, answer_media=body.answer_media, before=before, after=card.to_dict(),
                     fsrs_log=log.to_dict(), was_new=before.get("last_review") is None,
-                    card_version=next_version, retention=retention)
+                    card_version=next_version, retention=retention,
+                    independent_completed=body.independent_completed, blocker=body.blocker)
     db.add(review)
     try:
         db.commit()
