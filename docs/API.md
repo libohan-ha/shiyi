@@ -176,6 +176,24 @@ curl -fS "$SHIYI_API_URL/media" \
 
 新导出的 ZIP 使用 `version=2`，包含原题关联与本次反馈；导入兼容 v1/v2。旧备份缺字段时恢复为 `source_item_id=null`、`independent_completed=null`、`blocker=""`。导入始终添加副本，原题关系只在本次备份的条目之间重新映射，不能引用现有库中的原 ID；悬空或无效关系会整体回滚。新版备份不能导入旧版程序，以免静默丢失反馈与关联。升级前建议先导出一份备份；启动脚本会自动执行增量迁移，不会批量重排原有复习。
 
+## Agent 学习查询
+
+新增三个接口均要求 `read`，不改变学习状态、评分或权限，也不调用外部模型：
+
+| 接口 | 用途 |
+| --- | --- |
+| GET `/agent/context` | 学习日期、实际权限、偏好与学习摘要；不含题干、答案、作答正文、密码或密钥 |
+| GET `/agent/reviews` | 按科目、日期、评分、独立完成或卡点跨题查询历史，支持分页 |
+| GET `/agent/weaknesses` | 按已有跨日首答失败口径分页查询完整薄弱列表，不受统计页10条展示限制 |
+
+`context` 包含 `agent_api_version=1`、`permissions`、`profile`、`summary`、`study_date` 和 `server_time`。`study_date` 按用户学习时区计算，用于“今天/最近一周”查询；权限只反映当前密钥实际授权，不通过写操作试探。
+
+`reviews` 支持 `subject`、`item_id`、`rating`（again/hard/good/easy）、`independent_completed`、`has_blocker`、`date_from`、`date_to`、`include_undone`、`include_deleted`、`include_answers`、`page`、`page_size`。默认近30个学习日，日期含首尾，单次最多366日；默认不返回已撤销、已删除内容或作答正文。按reviewed_at及id稳定倒序，返回items/total/page/page_size/has_more及实际日期时区。行内含当前item元信息；题名不是历史内容快照。所有请求按当前账号隔离。
+
+`weaknesses` 支持subject、days（1..365，默认30）及分页；只返回活跃内容，复用现有“最近一次跨日首答仍为again”的规则。初学尚未完成用reviews的卡点筛选，不能混成跨日遗忘。条目不含题干或答案，只含定位信息、记忆安排、卡点与日期。每页1..100，返回total与has_more，不把一页当作全部。
+
+可移植技能源码见 `skills/shiyi-api/`。客户端提供context/reviews/weaknesses及原有CRUD/图片/真实评分，支持新版expected_item_version、independent_completed、blocker、source_item_id。可选函数工具只允许固定GET，宿主需自行把认证取回的图片转成模型图像输入；不公开媒体或传递拾忆密钥给模型。
+
 ## 错误处理
 
 | 状态码 | 含义 |

@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
-from . import auth, backup, library, reviews, stats
+from . import agent, auth, backup, library, reviews, stats
 from .config import settings
 from .database import engine
 from .static import SPAFiles
@@ -48,7 +48,7 @@ def health():
     return {"status": "ok", "version": "1.0.0"}
 
 
-for router in (auth.router, library.router, reviews.router, stats.router, backup.router):
+for router in (auth.router, library.router, reviews.router, stats.router, backup.router, agent.router):
     app.include_router(router)
 
 if (settings.frontend_dir / "index.html").is_file():

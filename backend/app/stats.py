@@ -17,7 +17,7 @@ from .security import require
 router = APIRouter(prefix="/api/v1", tags=["学习统计"])
 
 
-def learning_summary(recent, items, start, zone):
+def learning_summary(recent, items, start, zone, days=30, limit=10):
     today = start.astimezone(zone).date()
     item_map = {item.id: item for item in items}
     today_ids = set()
@@ -31,7 +31,7 @@ def learning_summary(recent, items, start, zone):
             today_ids.add(review.item_id)
             if review.independent_completed is not None:
                 problems[review.item_id] = review
-        if review.reviewed_at < start - timedelta(days=29):
+        if review.reviewed_at < start - timedelta(days=days - 1):
             continue
         key = (review.item_id, day)
         if key in seen_days:
@@ -57,13 +57,13 @@ def learning_summary(recent, items, start, zone):
              "delayed_failure_count": len(failures),
              "delayed_failures": [{**item_data(item, include_answer=False), "blocker": review.blocker,
                                    "reviewed_at": review.reviewed_at, "elapsed_days": gap}
-                                  for item, review, gap in failures[:10]],
-             "covered_weak_points": [item_data(item, include_answer=False) for item in covered[:10]],
+                                  for item, review, gap in failures[:limit]],
+             "covered_weak_points": [item_data(item, include_answer=False) for item in covered[:limit]],
              "problems_attempted": len(results),
              "problems_completed": sum(review.independent_completed for _, review in results),
              "problem_results": [{**item_data(item, include_answer=False),
                                   "independent_completed": review.independent_completed, "blocker": review.blocker,
-                                  "reviewed_at": review.reviewed_at} for item, review in results[:10]]})
+                                  "reviewed_at": review.reviewed_at} for item, review in results[:limit]]})
 
 
 @router.get("/stats")
