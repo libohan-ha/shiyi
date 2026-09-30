@@ -9,7 +9,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import Response
 from fsrs import Card
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from .config import settings
@@ -59,13 +59,14 @@ def export_data(user: User = Depends(account_user), db: Session = Depends(get_db
     items = db.scalars(select(Item).where(Item.user_id == user.id)).unique().all()
     media = db.scalars(select(Media).where(Media.user_id == user.id)).all()
     reviews = db.scalars(select(Review).where(Review.user_id == user.id)).all()
-    data = {"format": "shiyi", "version": 1, "exported_at": utcnow().isoformat(), "preferences": user.preferences,
+    data = {"format": "shiyi", "version": 2, "exported_at": utcnow().isoformat(), "preferences": user.preferences,
             "chapters": [{"id": c.id, "subject": c.subject, "name": c.name} for c in
                          db.scalars(select(Chapter).where(Chapter.user_id == user.id))],
             "items": [{**item_data(i), "card_data": i.card.data, "deleted_from": i.deleted_from} for i in items],
             "media": [{"id": m.id, "filename": m.filename, "path": f"media/{m.storage_name}"} for m in media],
             "reviews": [{key: getattr(r, key) for key in ("id", "item_id", "rating", "reviewed_at", "duration_ms", "answer_text",
-                        "answer_media", "before", "after", "fsrs_log", "was_new", "undone", "card_version", "retention")} for r in reviews]}
+                        "answer_media", "before", "after", "fsrs_log", "was_new", "undone", "card_version", "retention",
+                        "independent_completed", "blocker")} for r in reviews]}
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("manifest.json", json.dumps(data, ensure_ascii=False, default=str))
@@ -97,7 +98,8 @@ def import_data(file: UploadFile, user: User = Depends(account_user), db: Sessio
             if manifest_info.file_size > 40 * 1024 * 1024:
                 raise ValueError("备份清单过大")
             data = json.loads(archive.read("manifest.json"), parse_float=finite_number, parse_constant=finite_number)
-            if not isinstance(data, dict) or data.get("format") != "shiyi" or data.get("version") != 1:
+            if (not isinstance(data, dict) or data.get("format") != "shiyi"
+                    or type(data.get("version")) is not int or data["version"] not in (1, 2)):
                 raise ValueError("请选择拾忆导出的 ZIP 备份")
             if len(data["items"]) > 20000 or len(data["reviews"]) > 200000:
                 raise ValueError("备份记录过多")
@@ -124,7 +126,11 @@ def import_data(file: UploadFile, user: User = Depends(account_user), db: Sessio
                 created_files.append(settings.data_dir / "media" / media.storage_name)
             db.flush()
             item_map = {}
+            source_links = []
             for old in data["items"]:
+                old_id = old["id"]
+                if not isinstance(old_id, str) or not old_id or old_id in item_map:
+                    raise ValueError("备份内容 ID 无效或重复")
                 deleted = old.get("status") == "deleted"
                 fields = {key: old[key] for key in ItemInput.model_fields if key in old}
                 fields.update(chapter_id=chapters.get(old.get("chapter_id")), external_id=None,
@@ -132,6 +138,8 @@ def import_data(file: UploadFile, user: User = Depends(account_user), db: Sessio
                               question_media=[media_map[m["id"]] for m in old["question_media"]],
                               answer_media=[media_map[m["id"]] for m in old["answer_media"]])
                 body = ItemInput.model_validate(fields)
+                source_id = body.source_item_id
+                body.source_item_id = None  # Archive IDs must never refer to existing database rows.
                 validate_item(db, user, body)
                 item = Item(id=str(uuid4()), user_id=user.id, **body.model_dump(exclude={"question_media", "answer_media", "expected_version"}))
                 if deleted:
@@ -142,16 +150,32 @@ def import_data(file: UploadFile, user: User = Depends(account_user), db: Sessio
                 item.card = CardState(**state_values(archive_card(old["card_data"])), version=old["schedule"]["version"])
                 set_attachments(item, body)
                 db.add(item)
-                item_map[old["id"]] = item.id
+                item_map[old_id] = item
+                if source_id is not None:
+                    source_links.append((item, source_id))
             db.flush()
+            # Resolve only within this import, after every item exists (children may come first).
+            for item, source_id in source_links:
+                source = item_map.get(source_id)
+                if not source or source is item or source.subject != item.subject or source.kind != "problem":
+                    raise ValueError("小任务的来源必须是备份内同科目的其他原题")
+                # Set updated_at explicitly so the model's onupdate cannot rewrite archive history.
+                db.execute(update(Item).where(Item.id == item.id).values(
+                    source_item_id=source.id, updated_at=item.updated_at))
             for old in data["reviews"]:
                 rid = str(uuid4())
                 if old["rating"] not in (1, 2, 3, 4) or old["duration_ms"] < 0:
                     raise ValueError("无效复习记录")
+                completed, blocker = old.get("independent_completed"), old.get("blocker", "")
+                if completed is not None and not isinstance(completed, bool):
+                    raise ValueError("独立完成反馈必须为布尔值或空值")
+                if not isinstance(blocker, str) or len(blocker) > 2000:
+                    raise ValueError("主要卡点必须是最多 2000 个字符的文本")
                 archive_card(old["before"])
                 archive_card(old["after"])
-                db.add(Review(id=rid, user_id=user.id, item_id=item_map[old["item_id"]], request_id=f"import:{rid}",
+                db.add(Review(id=rid, user_id=user.id, item_id=item_map[old["item_id"]].id, request_id=f"import:{rid}",
                               payload_hash="import", reviewed_at=archive_datetime(old["reviewed_at"]),
+                              independent_completed=completed, blocker=blocker,
                               answer_media=[media_map[mid] for mid in old["answer_media"]],
                               **{key: old[key] for key in ("rating", "duration_ms", "answer_text", "before", "after", "fsrs_log",
                                                          "was_new", "undone", "card_version", "retention")}))

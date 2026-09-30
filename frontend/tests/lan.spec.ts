@@ -29,11 +29,13 @@ test('HTTP 局域网手机访问可以登录、上传图片、评分和撤销', 
   const id = page.url().split('/').at(-1)!
   await page.getByRole('link', { name: '复习这条知识' }).click()
   await page.getByRole('button', { name: /查看答案/ }).click()
+  await page.getByRole('radio', { name: '已独立完成', exact: true }).check()
   await page.getByRole('button', { name: /良好/ }).click()
   await expect(page.getByText('今天的努力，已悄悄生根。')).toBeVisible()
   await page.getByRole('button', { name: '撤销上次评分' }).click()
   await expect(page.getByRole('heading', { name: '局域网图片错题' })).toBeVisible()
   await page.getByRole('button', { name: /查看答案/ }).click()
+  await page.getByRole('radio', { name: '已独立完成', exact: true }).check()
   await page.getByRole('button', { name: /轻松/ }).click()
   await expect(page.getByText('今天的努力，已悄悄生根。')).toBeVisible()
   const history = await page.evaluate(async recordId => (await fetch(`/api/v1/items/${recordId}/reviews`)).json(), id)

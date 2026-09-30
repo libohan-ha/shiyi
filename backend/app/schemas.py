@@ -61,6 +61,7 @@ class ItemInput(StrictModel):
     difficulty: Difficulty = "medium"
     tags: list[str] = Field(default_factory=list, max_length=20)
     source: str = Field(default="", max_length=500)
+    source_item_id: str | None = Field(default=None, min_length=1, max_length=36)
     is_mistake: bool = False
     mistake_reason: str = Field(default="", max_length=10000)
     takeaway: str = Field(default="", max_length=10000)
@@ -97,6 +98,9 @@ class ReviewInput(StrictModel):
     request_id: str = Field(default_factory=lambda: str(uuid4()), min_length=1, max_length=100)
     rating: Literal["again", "hard", "good", "easy"]
     expected_version: int = Field(ge=0)
+    expected_item_version: int | None = Field(default=None, ge=1)
+    independent_completed: bool | None = Field(default=None, strict=True)
+    blocker: str = Field(default="", max_length=2000)
     duration_ms: int = Field(default=0, ge=0, le=86400000)
     answer_text: str = Field(default="", max_length=30000)
     answer_media: list[str] = Field(default_factory=list, max_length=8)

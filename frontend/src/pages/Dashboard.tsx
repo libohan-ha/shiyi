@@ -4,6 +4,7 @@ import { Link, useOutletContext } from 'react-router-dom'
 import { api } from '../api'
 import { dateLabel, plainText, subjectName, subjects } from '../lib'
 import type { Stats, User } from '../types'
+import LearningOutcomes from '../components/LearningOutcomes'
 import { useEditor } from '../components/Editor'
 import { Empty, ErrorState, Heatmap, Loading, PageHeading, SectionTitle } from '../components/ui'
 
@@ -58,6 +59,7 @@ export default function Dashboard() {
       })}</div>
     </section>
 
+    <LearningOutcomes data={data} compact/>
     <div className="metric-grid"><div className="metric"><span className="metric-icon sage"><BookOpen size={19}/></span><div><span>知识积累</span><strong>{data.totals.items}<small>条</small></strong></div><span className="metric-caption">属于你的知识花园</span></div><div className="metric"><span className="metric-icon clay"><Flame size={19}/></span><div><span>连续积累</span><strong>{data.totals.streak}<small>天</small></strong></div><span className="metric-caption">今天也为自己向前一步</span></div><div className="metric"><span className="metric-icon blue"><Clock3 size={19}/></span><div><span>累计专注</span><strong>{data.totals.minutes}<small>分钟</small></strong></div><span className="metric-caption">每次认真，都不会白费</span></div></div>
     <div className="dashboard-bottom">
       <section className="panel recent-panel"><SectionTitle title="最近拾起的知识" to="/library"/>{data.recent_items.length ? <div className="recent-list">{data.recent_items.map(item => <Link to={`/items/${item.id}`} key={item.id}><span className={`recent-subject ${subjects.find(subject => subject.id === item.subject)?.color}`}>{subjects.find(subject => subject.id === item.subject)?.symbol}</span><div><h3>{item.title}</h3><p>{subjectName(item.subject)}<span>·</span>{plainText(item.question) || '图片题目'}</p></div><span className="recent-date">{dateLabel(item.updated_at)}</span><ChevronRight size={16}/></Link>)}</div> : <Empty title="这里会留下你的积累" description="从一个你想真正记住的知识点开始。" action={<button className="text-button" onClick={() => edit()}>记录新知<ArrowRight size={15}/></button>}/>}</section>

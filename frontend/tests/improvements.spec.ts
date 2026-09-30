@@ -2,6 +2,34 @@ import { expect, test } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { account, item, openEditor, picture } from './helpers'
 
+test('今日收获区分任务覆盖与复习次数，统计展示卡点和整题表现', async ({ page }) => {
+  await account(page)
+  const original = await item(page, { title: '统计原题：Cache 综合计算', kind: 'problem' })
+  const task = await item(page, { title: '薄弱任务：组数计算', source_item_id: original.id })
+  const failed = await page.request.post(`/api/v1/items/${original.id}/reviews`, { data: {
+    rating: 'again', expected_version: 0, duration_ms: 180000, independent_completed: false, blocker: '分不清组与块',
+  } })
+  expect(failed.status()).toBe(201)
+  expect((await page.request.post(`/api/v1/items/${task.id}/reviews`, { data: {
+    rating: 'good', expected_version: 0, duration_ms: 60000,
+  } })).status()).toBe(201)
+  await page.goto('/')
+  const summary = page.getByRole('region', { name: '今日复盘收获' })
+  await expect(summary).toContainText('不同任务')
+  await expect(summary.locator('[data-metric="unique"]')).toHaveText('2')
+  await expect(summary.locator('[data-metric="minutes"]')).toHaveText('4')
+  await page.goto('/statistics')
+  await expect(page.getByRole('heading', { name: '今天覆盖的薄弱任务' })).toBeVisible()
+  await expect(page.getByRole('region', { name: '学习结果明细' })).toContainText('薄弱任务：组数计算')
+  await expect(page.getByRole('region', { name: '学习结果明细' })).toContainText('分不清组与块')
+  await expect(page.getByText('尚无跨日首答记录')).toBeVisible()
+  await page.screenshot({ path: test.info().outputPath('learning-results-desktop.png'), fullPage: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(page.getByRole('region', { name: '学习结果明细' })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.screenshot({ path: test.info().outputPath('learning-results-mobile.png'), fullPage: true, animations: 'disabled' })
+})
+
 test('搜索详情返回保留关键词、筛选和分页，支持错题本与全局搜索', async ({ page }) => {
   await account(page)
   // Use one learner for the three entry points, as in a real browsing session.
