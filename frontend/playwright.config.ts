@@ -22,7 +22,7 @@ export default defineConfig({
     timezoneId: 'Asia/Shanghai',
   },
   projects: [
-    { name: 'desktop', testMatch: ['workflows.spec.ts', 'improvements.spec.ts', 'image-viewer.spec.ts', 'review-feedback.spec.ts'], use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 1000 } } },
+    { name: 'desktop', testMatch: ['workflows.spec.ts', 'improvements.spec.ts', 'image-viewer.spec.ts', 'review-feedback.spec.ts', 'sidebar.spec.ts'], use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 1000 } } },
     { name: 'mobile', testMatch: ['mobile.spec.ts', 'image-viewer.spec.ts', 'review-feedback.spec.ts'], use: { ...devices['Pixel 7'] } },
     { name: 'lan', testMatch: 'lan.spec.ts', use: {
       ...devices['Pixel 7'],
