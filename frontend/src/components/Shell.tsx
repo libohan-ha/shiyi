@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { BarChart3, BookOpen, ChevronRight, Command, Home, Leaf, LogOut, PanelLeftClose, Plus, Search, Settings, Sparkles, SquarePen } from 'lucide-react'
+import { BarChart3, BookOpen, ChevronRight, Command, Home, Leaf, LogOut, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, Sparkles, SquarePen } from 'lucide-react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { api, post, queryClient } from '../api'
@@ -16,6 +16,7 @@ function Workspace({ user }: { user: User }) {
   const edit = useEditor()
   const [search, setSearch] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => { try { return localStorage.getItem('shiyi-sidebar-collapsed') === '1' } catch { return false } })
   const location = useLocation()
   const navigate = useNavigate()
   const stats = useQuery({ queryKey: ['stats'], queryFn: () => api<Stats>('/stats') })
@@ -31,16 +32,17 @@ function Workspace({ user }: { user: User }) {
     window.addEventListener('keydown', listener)
     return () => window.removeEventListener('keydown', listener)
   }, [edit])
+  const toggleSidebar = () => setSidebarCollapsed(value => { try { localStorage.setItem('shiyi-sidebar-collapsed', value ? '0' : '1') } catch { /* The sidebar still collapses for this visit. */ } return !value })
   const logout = async () => { try { await post('/auth/logout'); queryClient.clear(); navigate('/login', { replace: true }) } catch (e) { toast.error((e as Error).message) } }
-  return <div className={`app-shell ${location.pathname === '/review' ? 'review-shell' : ''}`}>
+  return <div className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${location.pathname === '/review' ? 'review-shell' : ''}`}>
     <a className="skip-link" href="#main">跳到内容</a>
     {mobileOpen && <button className="sidebar-overlay" aria-label="收起导航" onClick={() => setMobileOpen(false)}/>}
-    <aside className={`sidebar ${mobileOpen ? 'mobile-open' : ''}`}><Link to="/" className="brand-link" aria-label="拾忆首页"><Logo/></Link><div className="workspace-label"><span className="status-dot"/>我的学习空间<span>PERSONAL</span></div>
+    <aside id="main-sidebar" className={`sidebar ${mobileOpen ? 'mobile-open' : ''}`}><Link to="/" className="brand-link" aria-label="拾忆首页"><Logo/></Link><div className="workspace-label"><span className="status-dot"/>我的学习空间<span>PERSONAL</span></div>
       <nav className="main-nav" aria-label="主导航">{navigation.map(n => <NavLink key={n.to} to={n.to} end className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><n.icon size={19} strokeWidth={1.7}/><span>{n.label}</span>{n.to === '/' && !!stats.data?.today.due && <b>{stats.data.today.due}</b>}</NavLink>)}</nav>
       <div className="sidebar-section"><div className="nav-section-label">我的科目 <span>03</span></div>{subjects.map(s => <Link className="subject-nav" key={s.id} to={`/library?subject=${s.id}`}><span className={`subject-dot ${s.color}`}/><span>{s.name}</span><small>{stats.data?.subjects.find(x => x.subject === s.id)?.total ?? 0}</small></Link>)}</div>
       <div className="sidebar-bottom"><div className="sidebar-note"><Leaf size={24} strokeWidth={1.3}/><p>每一次想起，<br/>都在让记忆扎根。</p><span>A LITTLE, EVERY DAY.</span></div><NavLink className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} to="/settings"><Settings size={19} strokeWidth={1.7}/><span>偏好与连接</span></NavLink><div className="user-panel"><div className="avatar">{user.display_name.slice(0, 1)}</div><div><strong>{user.display_name}</strong><span>长期主义练习生</span></div><button onClick={() => void logout()} className="icon-button" aria-label="退出登录" title="退出登录"><LogOut size={17}/></button></div></div>
     </aside>
-    <div className="workspace"><header className="topbar"><div className="breadcrumb"><button className="icon-button mobile-menu" onClick={() => setMobileOpen(!mobileOpen)} aria-label="展开导航"><PanelLeftClose size={21}/></button><span className="breadcrumb-root">学习工作台</span><ChevronRight size={13}/><strong>{current?.label ?? (location.pathname === '/settings' ? '偏好与连接' : location.pathname === '/review' ? '专注复习' : '知识详情')}</strong></div><div className="topbar-actions"><button className="global-search" onClick={() => setSearch(true)} aria-label="搜索知识"><Search size={16}/><span>搜索你的知识</span><kbd>⌘ K</kbd></button><span className="header-divider"/><button className="button primary small" onClick={() => edit()}><Plus size={17}/><span>记录新知</span></button></div></header>
+    <div className="workspace"><header className="topbar"><div className="breadcrumb"><button className="icon-button sidebar-toggle" onClick={toggleSidebar} aria-label={sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'} aria-expanded={!sidebarCollapsed} aria-controls="main-sidebar" title={sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'}>{sidebarCollapsed ? <PanelLeftOpen size={21}/> : <PanelLeftClose size={21}/>}</button><button className="icon-button mobile-menu" onClick={() => setMobileOpen(!mobileOpen)} aria-label="展开导航"><PanelLeftClose size={21}/></button><span className="breadcrumb-root">学习工作台</span><ChevronRight size={13}/><strong>{current?.label ?? (location.pathname === '/settings' ? '偏好与连接' : location.pathname === '/review' ? '专注复习' : '知识详情')}</strong></div><div className="topbar-actions"><button className="global-search" onClick={() => setSearch(true)} aria-label="搜索知识"><Search size={16}/><span>搜索你的知识</span><kbd>⌘ K</kbd></button><span className="header-divider"/><button className="button primary small" onClick={() => edit()}><Plus size={17}/><span>记录新知</span></button></div></header>
       <main id="main" className={`main-content ${location.pathname === '/review' ? 'review-main' : ''}`}><Outlet context={{ user }}/></main>
       <footer className="workspace-footer"><span><Leaf size={13}/>拾忆 · 让知识慢慢生根</span><span>由 FSRS 科学安排每次重逢</span></footer>
     </div>
