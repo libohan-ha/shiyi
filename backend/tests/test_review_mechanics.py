@@ -128,11 +128,22 @@ def test_contradictory_or_incomplete_problem_feedback_is_rejected(account, ratin
     assert account.get(f"/api/v1/items/{item['id']}/reviews").json()["total"] == 0
 
 
-def test_feedback_on_non_problem_and_stale_content_is_rejected(account, item):
-    assert rate(account, item, "good", independent_completed=True).status_code == 422
+def test_review_on_stale_content_is_rejected(account, item):
+    assert item["kind"] != "problem"
     old_version = item["version"]
     assert account.patch(f"/api/v1/items/{item['id']}", json={"question": "新的问题"}).status_code == 200
     assert rate(account, item, "good", expected_item_version=old_version).status_code == 409
+
+
+def test_non_problem_cards_record_independent_completion_and_blocker(account, item):
+    response = rate(account, item, "again", independent_completed=False, blocker="概念没记住")
+    assert response.status_code == 201, response.text
+    saved = response.json()["review"]
+    assert saved["independent_completed"] is False
+    assert saved["blocker"] == "概念没记住"
+    task = account.post("/api/v1/items", json={"title": "小任务", "subject": item["subject"], "question": "Q",
+                                                "answer": "A", "source_item_id": item["id"]})
+    assert task.status_code == 201, task.text
 
 
 def test_retry_from_before_upgrade_keeps_legacy_payload_hash(account, item):

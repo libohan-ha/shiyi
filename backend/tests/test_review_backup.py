@@ -161,7 +161,7 @@ def test_import_keeps_reference_to_soft_deleted_source(account, feedback_archive
 
 
 @pytest.mark.parametrize("case", [
-    "self", "duplicate-id", "missing-source", "source-outside-archive", "wrong-subject", "non-problem-source",
+    "self", "duplicate-id", "missing-source", "source-outside-archive", "wrong-subject",
     "numeric-source", "empty-source", "empty-id",
 ])
 def test_invalid_source_relationship_rolls_back_everything(account, feedback_archive, case):
@@ -179,8 +179,6 @@ def test_invalid_source_relationship_rolls_back_everything(account, feedback_arc
     elif case == "wrong-subject":
         source["subject"] = "math"
         source["chapter_id"] = None
-    elif case == "non-problem-source":
-        source["kind"] = "concept"
     elif case == "numeric-source":
         task["source_item_id"] = 42
     elif case == "empty-source":

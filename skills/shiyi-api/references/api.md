@@ -87,7 +87,7 @@ days为1..365，默认30；分页规则同上。返回 `{items,total,page,page_s
 | difficulty | basic/medium/hard，仅分类用途 |
 | tags | 最多20个，每个不超过40字符 |
 | source | 来源文字或链接，最多500字符 |
-| source_item_id | 同账号同科目、kind=problem的来源原题ID或null，不能指向自己 |
+| source_item_id | 同账号同科目的来源条目ID或null，不能指向自己 |
 | is_mistake | 是否进入错题本 |
 | mistake_reason、takeaway | 条目层面的错因/提醒，各最多10000字符 |
 | status | active/draft/suspended |

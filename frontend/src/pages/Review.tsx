@@ -113,7 +113,8 @@ function ReviewCard({ item, active, onWorking, onRated, onSkip, onConflict, onEd
   const [answer, setAnswer] = useState('')
   const [independentCompleted, setIndependentCompleted] = useState<boolean | null>(null)
   const [blocker, setBlocker] = useState('')
-  const isProblem = item.kind === 'problem'
+  // Every card kind records whether it was completed independently.
+  const isProblem = true
   const feedbackAllows = useCallback((rating: Rating) => !isProblem || (independentCompleted === true
     ? rating !== 'again'
     : independentCompleted === false && rating === 'again' && !!blocker.trim() && blocker.length <= 2000), [isProblem, independentCompleted, blocker])
@@ -169,7 +170,7 @@ function ReviewCard({ item, active, onWorking, onRated, onSkip, onConflict, onEd
     <div className="my-answer"><button className="text-button" disabled={busy || retry || uploading} onClick={() => setAnswerOpen(!answerOpen)}>{answerOpen ? <X size={15}/> : <PlusIcon/>}{answerOpen ? '收起我的解答' : '记录我的解答 / 上传解题照片'}<span>选填</span></button>{answerOpen && <ContentField label="我的解答" maxFiles={8} maxLength={30000} disabled={busy || retry} onUploadingChange={setUploading} text={answer} media={media} onText={setAnswer} onMedia={setMedia} placeholder="写下思考过程，或者上传纸上的解答。" rows={3}/>}</div>
     {revealed && <div className="revealed-answer">{detail.isPending ? <Loading text="展开参考答案…"/> : detail.error ? <ErrorState error={detail.error} retry={() => void detail.refetch()}/> : <><div className="answer-divider"><span><Check size={15}/>参考答案</span></div><Content text={detail.data.answer} media={detail.data.answer_media}/>{detail.data.takeaway && <div className="review-takeaway"><Leaf size={18}/><div><strong>上次留给自己的提醒</strong><Content text={detail.data.takeaway}/></div></div>}</>}</div>}
     {revealed && isProblem && <fieldset className="problem-feedback" disabled={busy || retry || uploading || conflict || !detail.data}>
-      <legend>这次是否独立完成整题？</legend>
+      <legend>这次是否独立完成？</legend>
       <p className="field-help">以翻开答案前的尝试为准，需要提示或答案才完成，也算未独立完成。</p>
       <div className="feedback-choices">
         <label className={independentCompleted === true ? 'selected' : ''}><input type="radio" name="independent-completed" checked={independentCompleted === true} onChange={() => setIndependentCompleted(true)}/>已独立完成</label>
@@ -184,7 +185,7 @@ function ReviewCard({ item, active, onWorking, onRated, onSkip, onConflict, onEd
     <ReviewActions active={active}>{!revealed ? <>
       <button className="button primary reveal-button" onClick={() => setRevealed(true)}><Eye size={18}/>查看答案<span>空格</span></button><p>先独立尝试，再给这次回忆一个真实的评价。</p>
     </> : <>
-      <div className="rating-prompt"><h3>给这次回忆一个真实的评价</h3><p>{!isProblem ? '需要提示或答案才能完成，请选「忘记」。' : independentCompleted === null ? '请先选择这次是否独立完成整题。' : independentCompleted ? '已独立完成，请按费力程度选择「困难 / 良好 / 轻松」。' : '未独立完成，写下主要卡点后选择「忘记」。'}</p></div>
+      <div className="rating-prompt"><h3>给这次回忆一个真实的评价</h3><p>{!isProblem ? '需要提示或答案才能完成，请选「忘记」。' : independentCompleted === null ? '请先选择这次是否独立完成。' : independentCompleted ? '已独立完成，请按费力程度选择「困难 / 良好 / 轻松」。' : '未独立完成，写下主要卡点后选择「忘记」。'}</p></div>
       {preview.error && <ErrorState error={preview.error} retry={() => void preview.refetch()}/>}
       <div className="rating-buttons">{ratingOptions.map(r => <button key={r.id} className={`rating-button ${r.id}`} disabled={busy || uploading || !detail.data || !preview.data || retry || conflict || !feedbackAllows(r.id)} onClick={() => void submit(r.id)}><div><strong>{r.label}</strong><kbd>{r.shortcut}</kbd></div><span>{r.note}</span><small>{preview.data ? preview.data.ratings[r.id].next_day ? '明天' : intervalLabel(preview.data.ratings[r.id].interval_seconds) : '计算中…'}</small></button>)}</div>
       {(preview.data?.ratings.again.next_day || preview.data?.ratings.hard.next_day) && <p className="next-day-help">只有「忘记 / 困难」的短间隔移到明天；「良好」仍可能在 10 分钟后复习。</p>}

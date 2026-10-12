@@ -157,8 +157,8 @@ def import_data(file: UploadFile, user: User = Depends(account_user), db: Sessio
             # Resolve only within this import, after every item exists (children may come first).
             for item, source_id in source_links:
                 source = item_map.get(source_id)
-                if not source or source is item or source.subject != item.subject or source.kind != "problem":
-                    raise ValueError("小任务的来源必须是备份内同科目的其他原题")
+                if not source or source is item or source.subject != item.subject:
+                    raise ValueError("小任务的来源必须是备份内同科目的其他条目")
                 # Set updated_at explicitly so the model's onupdate cannot rewrite archive history.
                 db.execute(update(Item).where(Item.id == item.id).values(
                     source_item_id=source.id, updated_at=item.updated_at))

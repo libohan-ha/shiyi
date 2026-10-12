@@ -131,7 +131,7 @@ curl -fS "$SHIYI_API_URL/media" \
 | 字段 | 含义 |
 | --- | --- |
 | `expected_item_version` | 可选，来自 Item 的 `version`，不是 `schedule.version`；传入后若题目被编辑则返回 409。网页会传入，外部新调用也建议传入 |
-| `independent_completed` | 仅用于 `kind=problem` 的整题：严格 JSON `true/false`；省略或 `null` 表示未明确记录，不从评分倒推 |
+| `independent_completed` | 适用于所有内容类型：严格 JSON `true/false`；省略或 `null` 表示未明确记录，不从评分倒推 |
 | `blocker` | 本次主要卡点，最多 2000 字符；未独立完成时必填，其他情况应为空 |
 
 `independent_completed=false` 必须搭配 `rating=again`；`true` 必须搭配 `hard/good/easy`。非整题不能提交明确的整题结果。旧调用不传新增反馈字段仍可使用。
