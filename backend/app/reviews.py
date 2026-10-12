@@ -118,14 +118,12 @@ def submit_review(item_id: str, body: ReviewInput, user: User = Depends(require(
     if body.expected_item_version is not None and item.version != body.expected_item_version:
         raise HTTPException(409, "题目内容已更新，请刷新后重新作答")
     if body.independent_completed is not None:
-        if item.kind != "problem":
-            raise HTTPException(422, "只有整题可以记录是否独立完成")
         if body.independent_completed != (body.rating != "again"):
             raise HTTPException(422, "未独立完成请选择忘记；困难表示独立完成但费力")
         if not body.independent_completed and not body.blocker:
             raise HTTPException(422, "请写下这次未完成的主要卡点")
     if body.blocker and body.independent_completed is not False:
-        raise HTTPException(422, "主要卡点用于记录未独立完成的整题")
+        raise HTTPException(422, "主要卡点用于记录未独立完成的题目")
     check_media(db, user.id, body.answer_media)
     scheduler, retention = scheduler_for(user, item.subject)
     now = utcnow()

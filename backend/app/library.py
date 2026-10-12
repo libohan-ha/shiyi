@@ -64,8 +64,8 @@ def check_media(db, user_id, ids):
 def validate_item(db, user, body):
     if body.source_item_id:
         source = db.get(Item, body.source_item_id)
-        if not source or source.user_id != user.id or source.subject != body.subject or source.kind != "problem":
-            raise HTTPException(422, "小任务的来源必须是同一账号、同一科目的原题")
+        if not source or source.user_id != user.id or source.subject != body.subject:
+            raise HTTPException(422, "小任务的来源必须是同一账号、同一科目的条目")
     if body.chapter_id:
         chapter = db.get(Chapter, body.chapter_id)
         if not chapter or chapter.user_id != user.id or chapter.subject != body.subject:
@@ -213,9 +213,9 @@ def edit_item(item_id: str, body: ItemPatch, user: User = Depends(require("write
     validate_item(db, user, data)
     if data.source_item_id == item.id:
         raise HTTPException(422, "小任务不能引用自己作为原题")
-    if data.subject != item.subject or data.kind != "problem":
+    if data.subject != item.subject:
         if db.scalar(select(Item.id).where(Item.source_item_id == item.id).limit(1)):
-            raise HTTPException(422, "这道原题已关联小任务，请先解除关联再改变科目或类型")
+            raise HTTPException(422, "这道原题已关联小任务，请先解除关联再改变科目")
     expected = data.expected_version if data.expected_version is not None else item.version
     result = db.execute(update(Item).where(Item.id == item.id, Item.version == expected).values(version=expected + 1))
     if result.rowcount != 1:
