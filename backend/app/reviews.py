@@ -1,6 +1,6 @@
 import hashlib
 import json
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -18,6 +18,7 @@ from .security import require
 
 router = APIRouter(prefix="/api/v1", tags=["FSRS 复习"])
 RATINGS = {"again": 1, "hard": 2, "good": 3, "easy": 4}
+EXAM_WINDOW_DAYS = 10
 
 
 def day_bounds(user, now=None):
@@ -25,6 +26,58 @@ def day_bounds(user, now=None):
     local = (now or utcnow()).astimezone(zone)
     start = datetime.combine(local.date(), time.min, zone)
     return start.astimezone(UTC), (start + timedelta(days=1)).astimezone(UTC)
+
+
+def exam_window(user, now):
+    """Local day starts (UTC) in the final days before the exam that can still take a review.
+
+    Returns (exam_start, days) or None when no future exam date is set.
+    """
+    raw = user.preferences.get("exam_date")
+    if not raw:
+        return None
+    zone = ZoneInfo(user.preferences.get("timezone", "Asia/Shanghai"))
+    exam_day = date.fromisoformat(raw) if isinstance(raw, str) else raw
+    exam_start = datetime.combine(exam_day, time.min, zone).astimezone(UTC)
+    if exam_start <= now:
+        return None
+    tomorrow = now.astimezone(zone).date() + timedelta(days=1)
+    first = max(tomorrow, exam_day - timedelta(days=EXAM_WINDOW_DAYS))
+    days = [datetime.combine(first + timedelta(days=n), time.min, zone).astimezone(UTC)
+            for n in range((exam_day - first).days)]
+    return exam_start, days
+
+
+def exam_slot(days, card_id):
+    """Spread capped cards evenly over the final window, stably per card."""
+    digest = hashlib.sha256(str(card_id).encode()).digest()
+    return days[int.from_bytes(digest[:4], "big") % len(days)]
+
+
+def cap_to_exam(user, card, now):
+    """Pull a due date that would land on or after the exam back into the final window."""
+    window = exam_window(user, now)
+    if not window or not window[1] or card.due < window[0]:
+        return False
+    card.due = exam_slot(window[1], card.card_id)
+    return True
+
+
+def rebalance_exam(db, user, now=None):
+    """Move already-scheduled reviews that fall on or after the exam into the final window."""
+    now = now or utcnow()
+    window = exam_window(user, now)
+    if not window or not window[1]:
+        return 0
+    states = db.scalars(select(CardState).join(Item).where(
+        Item.user_id == user.id, CardState.last_review.is_not(None), CardState.due >= window[0])).all()
+    for state in states:
+        card = Card.from_dict(state.data)
+        card.due = exam_slot(window[1], card.card_id)
+        state.data, state.due, state.version = card.to_dict(), card.due, state.version + 1
+    if states:
+        db.commit()
+    return len(states)
 
 
 def scheduler_for(user, subject):
@@ -37,6 +90,7 @@ def schedule_review(scheduler, user, card, rating, now, duration=None):
     next_day = rating in (Rating.Again, Rating.Hard) and card.due - now < timedelta(days=1)
     if next_day:
         card.due = day_bounds(user, now)[1]
+    cap_to_exam(user, card, now)
     return card, log, next_day
 
 
@@ -49,6 +103,7 @@ def state_values(card):
 def due(subject: Subject | None = None, limit: int = Query(100, ge=1, le=200),
         user: User = Depends(require("read")), db: Session = Depends(get_db)):
     now = utcnow()
+    rebalance_exam(db, user, now)
     start, end = day_bounds(user, now)
     stmt = select(Item).join(CardState).where(Item.user_id == user.id, Item.status == "active")
     if subject:
