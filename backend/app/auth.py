@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .database import get_db, utcnow
 from .models import APIKey, Chapter, SessionToken, User
+from .reviews import rebalance_exam
 from .schemas import Credentials, KeyInput, Login, PasswordInput, Preferences
 from .security import (
     COOKIE,
@@ -103,6 +104,7 @@ def save_preferences(body: Preferences, user: User = Depends(account_user), db: 
     user.preferences = body.model_dump(mode="json", exclude={"display_name"})
     user.display_name = body.display_name
     db.commit()
+    rebalance_exam(db, user)
     return user_data(user)
 
 
