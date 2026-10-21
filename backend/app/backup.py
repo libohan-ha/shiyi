@@ -66,7 +66,7 @@ def export_data(user: User = Depends(account_user), db: Session = Depends(get_db
             "media": [{"id": m.id, "filename": m.filename, "path": f"media/{m.storage_name}"} for m in media],
             "reviews": [{key: getattr(r, key) for key in ("id", "item_id", "rating", "reviewed_at", "duration_ms", "answer_text",
                         "answer_media", "before", "after", "fsrs_log", "was_new", "undone", "card_version", "retention",
-                        "independent_completed", "blocker")} for r in reviews]}
+                        "independent_completed", "blocker", "steps")} for r in reviews]}
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("manifest.json", json.dumps(data, ensure_ascii=False, default=str))
@@ -171,11 +171,17 @@ def import_data(file: UploadFile, user: User = Depends(account_user), db: Sessio
                     raise ValueError("独立完成反馈必须为布尔值或空值")
                 if not isinstance(blocker, str) or len(blocker) > 2000:
                     raise ValueError("主要卡点必须是最多 2000 个字符的文本")
+                steps = old.get("steps") or []
+                if not isinstance(steps, list) or len(steps) > 30 or not all(
+                        isinstance(step, dict) and isinstance(step.get("text"), str) and 0 < len(step["text"]) <= 300
+                        and isinstance(step.get("done"), bool) for step in steps):
+                    raise ValueError("贯通率步骤格式无效")
                 archive_card(old["before"])
                 archive_card(old["after"])
                 db.add(Review(id=rid, user_id=user.id, item_id=item_map[old["item_id"]].id, request_id=f"import:{rid}",
                               payload_hash="import", reviewed_at=archive_datetime(old["reviewed_at"]),
                               independent_completed=completed, blocker=blocker,
+                              steps=[{"text": step["text"], "done": step["done"]} for step in steps],
                               answer_media=[media_map[mid] for mid in old["answer_media"]],
                               **{key: old[key] for key in ("rating", "duration_ms", "answer_text", "before", "after", "fsrs_log",
                                                          "was_new", "undone", "card_version", "retention")}))

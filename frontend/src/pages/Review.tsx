@@ -5,8 +5,8 @@ import { ArrowLeft, ArrowRight, Check, ChevronDown, Eye, Leaf, Pause, Pencil, Ro
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { ApiError, api, post, refreshLearning } from '../api'
-import { createRequestId, dateLabel, intervalLabel, subjectName, subjects } from '../lib'
-import type { Item, Media, Preview, Queue, Rating, Review } from '../types'
+import { createRequestId, dateLabel, intervalLabel, percent, stepLines, subjectName, subjects } from '../lib'
+import type { Item, Media, Preview, Queue, Rating, Review, Step, Throughput } from '../types'
 import { ContentField, useEditor } from '../components/Editor'
 import { Content, ErrorState, Loading, Spinner } from '../components/ui'
 import '../review-feedback.css'
@@ -113,11 +113,24 @@ function ReviewCard({ item, active, onWorking, onRated, onSkip, onConflict, onEd
   const [answer, setAnswer] = useState('')
   const [independentCompleted, setIndependentCompleted] = useState<boolean | null>(null)
   const [blocker, setBlocker] = useState('')
+  // 贯通率: first attempt lists steps line by line; later attempts tick off the steps that were missed.
+  const [doneText, setDoneText] = useState('')
+  const [missText, setMissText] = useState('')
+  const [ticks, setTicks] = useState<Record<number, boolean>>({})
+  const throughputQuery = useQuery({ queryKey: ['throughput', item.id], queryFn: () => api<Throughput>(`/items/${item.id}/throughput`), enabled: revealed })
+  const previous = throughputQuery.data?.latest?.steps ?? null
+  const steps: Step[] = previous
+    ? independentCompleted === true ? previous.map(step => ({ text: step.text, done: true }))
+      : [...previous.map((step, index) => ({ text: step.text, done: ticks[index] ?? step.done })), ...stepLines(missText).map(text => ({ text, done: false }))]
+    : independentCompleted === false ? [...stepLines(doneText).map(text => ({ text, done: true })), ...stepLines(missText).map(text => ({ text, done: false }))] : []
+  const stepsValid = steps.length <= 30
+  const missedSteps = steps.filter(step => !step.done).length
+  const rate = steps.length ? (steps.length - missedSteps) / steps.length : null
   // Every card kind records whether it was completed independently.
   const isProblem = true
-  const feedbackAllows = useCallback((rating: Rating) => !isProblem || (independentCompleted === true
+  const feedbackAllows = useCallback((rating: Rating) => !isProblem || (stepsValid && (independentCompleted === true
     ? rating !== 'again'
-    : independentCompleted === false && rating === 'again' && !!blocker.trim() && blocker.length <= 2000), [isProblem, independentCompleted, blocker])
+    : independentCompleted === false && rating === 'again' && (!!blocker.trim() || missedSteps > 0) && blocker.length <= 2000)), [isProblem, independentCompleted, blocker, missedSteps, stepsValid])
   const [media, setMedia] = useState<Media[]>([])
   const [busy, setBusy] = useState(false)
   const [retry, setRetry] = useState(false)
@@ -149,12 +162,12 @@ function ReviewCard({ item, active, onWorking, onRated, onSkip, onConflict, onEd
     const duration = Math.round(Math.min(86400000, time.accumulated + (time.since ? performance.now() - time.since : 0)))
     const payload = pending.current ?? { request_id: createRequestId(), rating, expected_version: item.schedule.version, expected_item_version: item.version,
       duration_ms: duration, answer_text: answer, answer_media: media.map(m => m.id),
-      ...(isProblem ? { independent_completed: independentCompleted, blocker: independentCompleted === false ? blocker.trim() : '' } : {}) }
+      ...(isProblem ? { independent_completed: independentCompleted, blocker: independentCompleted === false ? blocker.trim() : '', steps } : {}) }
     pending.current = payload
     try { const response = await post<{ review: Review }>(`/items/${item.id}/reviews`, payload); pending.current = null; setRetry(false); await onRated(response.review) }
     catch (e) { const uncertain = e instanceof ApiError && (e.status === 0 || e.status >= 500); setRetry(uncertain); if (!uncertain) pending.current = null; if (e instanceof ApiError && e.status === 409) { setConflict(true); refreshLearning() } toast.error((e as Error).message) }
     finally { busyRef.current = false; setBusy(false) }
-  }, [revealed, detail.data, preview.data, item, answer, media, onRated, uploading, active, conflict, feedbackAllows, isProblem, independentCompleted, blocker])
+  }, [revealed, detail.data, preview.data, item, answer, media, onRated, uploading, active, conflict, feedbackAllows, isProblem, independentCompleted, blocker, steps])
   useEffect(() => {
     const listener = (e: KeyboardEvent) => {
       if (!active || e.ctrlKey || e.metaKey || e.altKey || document.querySelector('dialog[open]') || (e.target as HTMLElement).closest('input,textarea,select,button,a,[contenteditable],dialog')) return
@@ -171,21 +184,37 @@ function ReviewCard({ item, active, onWorking, onRated, onSkip, onConflict, onEd
     {revealed && <div className="revealed-answer">{detail.isPending ? <Loading text="展开参考答案…"/> : detail.error ? <ErrorState error={detail.error} retry={() => void detail.refetch()}/> : <><div className="answer-divider"><span><Check size={15}/>参考答案</span></div><Content text={detail.data.answer} media={detail.data.answer_media}/>{detail.data.takeaway && <div className="review-takeaway"><Leaf size={18}/><div><strong>上次留给自己的提醒</strong><Content text={detail.data.takeaway}/></div></div>}</>}</div>}
     {revealed && isProblem && <fieldset className="problem-feedback" disabled={busy || retry || uploading || conflict || !detail.data}>
       <legend>这次是否独立完成？</legend>
+      {throughputQuery.data?.first && <p className="throughput-history">第一次贯通率 <b>{percent(throughputQuery.data.first.throughput)}</b>{throughputQuery.data.attempts > 1 && <> · 上次 <b>{percent(throughputQuery.data.latest?.throughput)}</b></>}<span>已记录 {throughputQuery.data.attempts} 次</span></p>}
       <p className="field-help">以翻开答案前的尝试为准，需要提示或答案才完成，也算未独立完成。</p>
       <div className="feedback-choices">
         <label className={independentCompleted === true ? 'selected' : ''}><input type="radio" name="independent-completed" checked={independentCompleted === true} onChange={() => setIndependentCompleted(true)}/>已独立完成</label>
         <label className={independentCompleted === false ? 'selected' : ''}><input type="radio" name="independent-completed" checked={independentCompleted === false} onChange={() => setIndependentCompleted(false)}/>未独立完成</label>
       </div>
+      {independentCompleted === false && <div className="throughput-steps">
+        <div className="throughput-head"><span>这次的贯通率</span><strong>{percent(rate)}</strong><small>{steps.length ? `${steps.length - missedSteps} / ${steps.length} 步` : '按步骤拆开，先收下做出来的部分'}</small></div>
+        {previous ? <>
+          <p className="field-help">上次的步骤都在这里，这次做出来的打个钩。</p>
+          <ul className="step-checklist">{previous.map((step, index) => { const done = ticks[index] ?? step.done; return <li key={index} className={done ? 'done' : ''}><label><input type="checkbox" checked={done} onChange={e => setTicks(t => ({ ...t, [index]: e.target.checked }))}/>{step.text}{!step.done && done && <em>这次做出来了</em>}</label></li> })}</ul>
+          <label className="field" htmlFor="steps-new-miss">新发现的卡住步骤（选填，一行一个）</label>
+          <textarea id="steps-new-miss" rows={2} value={missText} onChange={e => setMissText(e.target.value)} placeholder="这次又卡在了别的地方？写在这里。"/>
+        </> : <>
+          <label className="field" htmlFor="steps-done">我做出来的（一行一步）</label>
+          <textarea id="steps-done" rows={3} value={doneText} onChange={e => setDoneText(e.target.value)} placeholder={'统一单位\n求出组数'}/>
+          <label className="field" htmlFor="steps-miss">我没做出来的（一行一步）</label>
+          <textarea id="steps-miss" rows={2} value={missText} onChange={e => setMissText(e.target.value)} placeholder="算标记位"/>
+        </>}
+        {!stepsValid && <p className="field-help">最多记录 30 步，请合并一些步骤。</p>}
+      </div>}
       {independentCompleted === false && <div className="feedback-blocker">
-        <label className="field" htmlFor="review-blocker">主要卡点</label>
-        <textarea id="review-blocker" rows={3} maxLength={2000} required value={blocker} aria-describedby="blocker-help" onChange={e => setBlocker(e.target.value)} placeholder="是哪一个概念、条件或步骤卡住了？先记下最主要的一点。"/>
-        <p id="blocker-help" className="field-help">{!blocker.trim() ? '先写下主要卡点，再选「忘记」。' : '这次选「忘记」。卡点会保存在历史中，之后可按需提炼小任务。'}<span>{blocker.length} / 2000</span></p>
+        <label className="field" htmlFor="review-blocker">主要卡点{missedSteps > 0 && <small>（选填，留空就用没做出来的步骤）</small>}</label>
+        <textarea id="review-blocker" rows={3} maxLength={2000} required={!missedSteps} value={blocker} aria-describedby="blocker-help" onChange={e => setBlocker(e.target.value)} placeholder="是哪一个概念、条件或步骤卡住了？先记下最主要的一点。"/>
+        <p id="blocker-help" className="field-help">{!blocker.trim() && !missedSteps ? '先写下主要卡点或没做出来的步骤，再选「忘记」。' : '这次选「忘记」。卡点会保存在历史中，之后可按需提炼小任务。'}<span>{blocker.length} / 2000</span></p>
       </div>}
     </fieldset>}
     <ReviewActions active={active}>{!revealed ? <>
       <button className="button primary reveal-button" onClick={() => setRevealed(true)}><Eye size={18}/>查看答案<span>空格</span></button><p>先独立尝试，再给这次回忆一个真实的评价。</p>
     </> : <>
-      <div className="rating-prompt"><h3>给这次回忆一个真实的评价</h3><p>{!isProblem ? '需要提示或答案才能完成，请选「忘记」。' : independentCompleted === null ? '请先选择这次是否独立完成。' : independentCompleted ? '已独立完成，请按费力程度选择「困难 / 良好 / 轻松」。' : '未独立完成，写下主要卡点后选择「忘记」。'}</p></div>
+      <div className="rating-prompt"><h3>给这次回忆一个真实的评价</h3><p>{!isProblem ? '需要提示或答案才能完成，请选「忘记」。' : independentCompleted === null ? '请先选择这次是否独立完成。' : independentCompleted ? '已独立完成，请按费力程度选择「困难 / 良好 / 轻松」。' : '未独立完成，记下步骤或卡点后选择「忘记」。'}</p></div>
       {preview.error && <ErrorState error={preview.error} retry={() => void preview.refetch()}/>}
       <div className="rating-buttons">{ratingOptions.map(r => <button key={r.id} className={`rating-button ${r.id}`} disabled={busy || uploading || !detail.data || !preview.data || retry || conflict || !feedbackAllows(r.id)} onClick={() => void submit(r.id)}><div><strong>{r.label}</strong><kbd>{r.shortcut}</kbd></div><span>{r.note}</span><small>{preview.data ? preview.data.ratings[r.id].next_day ? '明天' : intervalLabel(preview.data.ratings[r.id].interval_seconds) : '计算中…'}</small></button>)}</div>
       {(preview.data?.ratings.again.next_day || preview.data?.ratings.hard.next_day) && <p className="next-day-help">只有「忘记 / 困难」的短间隔移到明天；「良好」仍可能在 10 分钟后复习。</p>}

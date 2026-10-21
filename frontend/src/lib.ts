@@ -37,3 +37,6 @@ export function createRequestId() {
   // getRandomValues also works on HTTP LAN pages, where randomUUID is unavailable.
   return Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('')
 }
+
+export const stepLines = (text: string) => text.split('\n').map(line => line.trim()).filter(Boolean).map(line => line.slice(0, 300))
+export const percent = (value: number | null | undefined) => value === null || value === undefined ? '—' : `${Math.round(value * 100)}%`

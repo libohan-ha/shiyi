@@ -98,7 +98,7 @@ function Editor({ options, userId, onClose }: { options: EditorOptions; userId: 
   const defaultForm = { title: old?.title ?? (sourceItem ? `小任务 · ${(sourceBlocker || sourceItem.title).slice(0, 100)}` : ''), subject: initialSubject,
     chapter_id: old ? old.chapter_id ?? '' : sourceItem ? sourceItem.chapter_id ?? '' : entryDefaults.chapters[initialSubject] ?? '',
     kind: old?.kind ?? (sourceItem ? 'concept' : options.mistake ? 'problem' : initialSubject === 'english' ? 'vocabulary' : 'concept'),
-    question: old?.question ?? (sourceItem ? `针对「${sourceBlocker || sourceItem.title}」，需要掌握的关键概念或步骤是什么？` : ''), answer: old?.answer ?? '',
+    question: old?.question ?? (sourceItem ? `If：看到什么特征时（针对「${sourceBlocker || sourceItem.title}」）？\nThen：应该触发什么操作？` : ''), answer: old?.answer ?? (sourceItem ? 'If：\nThen：' : ''),
     difficulty: old?.difficulty ?? 'medium', tags: old?.tags.join('，') ?? '', source: old?.source ?? '',
     is_mistake: old?.is_mistake ?? options.mistake ?? false, mistake_reason: old?.mistake_reason ?? '', takeaway: old?.takeaway ?? '',
     question_media: old?.question_media ?? [] as Media[], answer_media: old?.answer_media ?? [] as Media[] }

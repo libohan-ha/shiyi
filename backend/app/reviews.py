@@ -139,19 +139,25 @@ def preview(item_id: str, user: User = Depends(require("read")), db: Session = D
     return {"ratings": options, "version": item.card.version}
 
 
+def throughput(steps):
+    """贯通率: the share of a problem's steps the learner carried through on their own."""
+    return sum(bool(step.get("done")) for step in steps) / len(steps) if steps else None
+
+
 def review_data(review):
     return {"id": review.id, "item_id": review.item_id, "rating": review.rating, "reviewed_at": review.reviewed_at,
             "duration_ms": review.duration_ms, "answer_text": review.answer_text, "answer_media": review.answer_media,
             "undone": review.undone, "due": review.after.get("due"), "was_new": review.was_new,
-            "independent_completed": review.independent_completed, "blocker": review.blocker}
+            "independent_completed": review.independent_completed, "blocker": review.blocker,
+            "steps": review.steps or [], "throughput": throughput(review.steps or [])}
 
 
 @router.post("/items/{item_id}/reviews", status_code=201)
 def submit_review(item_id: str, body: ReviewInput, user: User = Depends(require("review")), db: Session = Depends(get_db)):
     payload = {**body.model_dump(), "item_id": item_id}
     # Keep retries of pre-upgrade requests compatible with their stored payload hashes.
-    for field in ("expected_item_version", "independent_completed", "blocker"):
-        if payload[field] is None or payload[field] == "":
+    for field in ("expected_item_version", "independent_completed", "blocker", "steps"):
+        if payload[field] is None or payload[field] == "" or payload[field] == []:
             del payload[field]
     payload_hash = hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
     existing = db.scalar(select(Review).where(Review.user_id == user.id, Review.request_id == body.request_id))
@@ -172,12 +178,22 @@ def submit_review(item_id: str, body: ReviewInput, user: User = Depends(require(
         raise HTTPException(409, "这道题已在其他窗口复习，请刷新后继续")
     if body.expected_item_version is not None and item.version != body.expected_item_version:
         raise HTTPException(409, "题目内容已更新，请刷新后重新作答")
+    steps = [step.model_dump() for step in body.steps]
+    missed = [step["text"].strip() for step in steps if not step["done"]]
+    blocker = body.blocker
+    if steps and body.independent_completed is None:
+        raise HTTPException(422, "记录贯通率前，请先选择这次是否独立完成")
+    if steps and body.independent_completed and missed:
+        raise HTTPException(422, "已独立完成时，所有步骤都应已做出")
     if body.independent_completed is not None:
         if body.independent_completed != (body.rating != "again"):
             raise HTTPException(422, "未独立完成请选择忘记；困难表示独立完成但费力")
-        if not body.independent_completed and not body.blocker:
-            raise HTTPException(422, "请写下这次未完成的主要卡点")
-    if body.blocker and body.independent_completed is not False:
+        if not body.independent_completed and not blocker:
+            if not missed:
+                raise HTTPException(422, "请写下这次未完成的主要卡点")
+            # The steps that were not carried through are the blocker.
+            blocker = "；".join(missed)[:2000]
+    if blocker and body.independent_completed is not False:
         raise HTTPException(422, "主要卡点用于记录未独立完成的题目")
     check_media(db, user.id, body.answer_media)
     scheduler, retention = scheduler_for(user, item.subject)
@@ -195,7 +211,7 @@ def submit_review(item_id: str, body: ReviewInput, user: User = Depends(require(
                     answer_text=body.answer_text, answer_media=body.answer_media, before=before, after=card.to_dict(),
                     fsrs_log=log.to_dict(), was_new=before.get("last_review") is None,
                     card_version=next_version, retention=retention,
-                    independent_completed=body.independent_completed, blocker=body.blocker)
+                    independent_completed=body.independent_completed, blocker=blocker, steps=steps)
     db.add(review)
     try:
         db.commit()
@@ -215,6 +231,21 @@ def history(item_id: str, page: int = Query(1, ge=1), user: User = Depends(requi
     total = db.scalar(select(func.count()).select_from(stmt.subquery()))
     return {"items": [review_data(r) for r in db.scalars(stmt.order_by(Review.reviewed_at.desc()).offset((page - 1) * 30).limit(30))],
             "total": total, "page": page}
+
+
+@router.get("/items/{item_id}/throughput")
+def item_throughput(item_id: str, user: User = Depends(require("read")), db: Session = Depends(get_db)):
+    """First and latest 贯通率 of an item, with the latest steps to tick off on the next attempt."""
+    get_item(db, user.id, item_id)
+    reviews = [r for r in db.scalars(select(Review).where(
+        Review.item_id == item_id, Review.user_id == user.id, Review.undone.is_(False)).order_by(
+        Review.reviewed_at, Review.card_version)) if r.steps]
+    if not reviews:
+        return {"attempts": 0, "first": None, "latest": None}
+    first, latest = reviews[0], reviews[-1]
+    return {"attempts": len(reviews),
+            "first": {"throughput": throughput(first.steps), "steps": first.steps, "reviewed_at": first.reviewed_at},
+            "latest": {"throughput": throughput(latest.steps), "steps": latest.steps, "reviewed_at": latest.reviewed_at}}
 
 
 @router.post("/reviews/{review_id}/undo")
