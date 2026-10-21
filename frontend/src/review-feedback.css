@@ -64,3 +64,27 @@
   .related-tasks { padding: 19px; }
   .derived-source-note { padding: 15px; }
 }
+
+/* 贯通率 */
+.throughput-history { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; margin: 0 0 12px; font-size: 13px; color: var(--muted); }
+.throughput-history b { color: var(--ink); font-weight: 600; }
+.throughput-history span { margin-left: auto; font-size: 11px; }
+.throughput-steps { margin-top: 18px; padding: 14px 16px; border-radius: 12px; background: var(--sage); }
+.throughput-steps .field { display: block; margin: 12px 0 6px; }
+.throughput-steps textarea { display: block; width: 100%; resize: vertical; }
+.throughput-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.throughput-head span { font-size: 12px; color: var(--muted); }
+.throughput-head strong { font-family: Georgia, serif; font-size: 28px; font-weight: 400; color: var(--green); font-variant-numeric: tabular-nums; }
+.throughput-head small { font-size: 12px; color: var(--muted); }
+.step-checklist { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.step-checklist label { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; background: var(--panel); cursor: pointer; overflow-wrap: anywhere; }
+.step-checklist li.done label { color: var(--green); }
+.step-checklist em { margin-left: auto; font-style: normal; font-size: 11px; color: var(--green); white-space: nowrap; }
+.feedback-blocker .field small { margin-left: 4px; font-weight: 400; color: var(--muted); }
+.history-feedback .throughput-badge { margin-left: 6px; }
+.history-steps { list-style: none; margin: 8px 0 0; padding: 0; font-size: 12px; line-height: 1.8; color: #895438; overflow-wrap: anywhere; }
+.history-steps li.done { color: var(--green); }
+.throughput-summary { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); display: grid; gap: 4px; }
+.throughput-summary span, .throughput-summary small { font-size: 12px; color: var(--muted); }
+.throughput-summary strong { font-family: Georgia, serif; font-size: 24px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.throughput-summary i { font-style: normal; margin: 0 8px; color: var(--muted); }

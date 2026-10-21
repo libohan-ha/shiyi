@@ -119,6 +119,8 @@ class Review(Base):
     answer_text: Mapped[str] = mapped_column(Text, default="")
     independent_completed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     blocker: Mapped[str] = mapped_column(Text, default="")
+    # 贯通率: the problem sliced into steps, each {"text": str, "done": bool}.
+    steps: Mapped[list] = mapped_column(JSON, default=list)
     answer_media: Mapped[list] = mapped_column(JSON, default=list)
     before: Mapped[dict] = mapped_column(JSON)
     after: Mapped[dict] = mapped_column(JSON)

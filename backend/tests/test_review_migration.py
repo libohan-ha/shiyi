@@ -9,7 +9,7 @@ import pytest
 
 BACKEND = Path(__file__).resolve().parents[1]
 OLD_REVISION = "9ce1295fcf53"
-NEW_REVISION = "b521cf13a902"
+NEW_REVISION = "c7a1d2e9f310"
 TABLES = ("users", "chapters", "items", "card_states", "media", "item_media", "reviews")
 TIMESTAMP = "2020-01-02 03:04:05.123456"
 
@@ -110,6 +110,7 @@ def test_upgrade_preserves_history_and_adds_unknown_feedback(legacy_database):
     assert connection.execute("SELECT version_num FROM alembic_version").fetchone()[0] == NEW_REVISION
     assert [row[0] for row in connection.execute("SELECT source_item_id FROM items")] == [None, None]
     assert tuple(connection.execute("SELECT independent_completed, blocker FROM reviews").fetchone()) == (None, "")
+    assert connection.execute("SELECT steps FROM reviews").fetchone()[0] == "[]"
     columns = {row[1]: row for row in connection.execute("PRAGMA table_info(reviews)")}
     assert columns["blocker"][3] == 1
     assert columns["blocker"][4] == "''"
@@ -133,6 +134,7 @@ def test_downgrade_preserves_history_even_with_populated_source_links(tmp_path):
         for review in before["reviews"]:
             review.pop("independent_completed")
             review.pop("blocker")
+            review.pop("steps")
         migrate(tmp_path, "downgrade", OLD_REVISION)
         assert_history_preserved(connection, before)
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone()[0] == OLD_REVISION

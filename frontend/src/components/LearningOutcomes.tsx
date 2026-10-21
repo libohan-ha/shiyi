@@ -1,6 +1,6 @@
 import { ArrowRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { dateLabel, subjectName } from '../lib'
+import { dateLabel, percent, subjectName } from '../lib'
 import type { Stats } from '../types'
 import './learning-outcomes.css'
 
@@ -14,6 +14,7 @@ export default function LearningOutcomes({ data, compact = false }: { data: Stat
         <div><dt>不同任务</dt><dd><strong data-metric="unique">{today.unique_items}</strong><span>条</span></dd></div>
         <div><dt>薄弱任务覆盖</dt><dd><strong>{today.weak_points_covered}</strong><span>条</span></dd></div>
         <div><dt>整题独立完成</dt><dd><strong>{learning.problems_completed}</strong><span>/ {learning.problems_attempted} 道</span></dd></div>
+        <div><dt>平均贯通率</dt><dd><strong>{percent(learning.throughput_average)}</strong><span>{learning.throughput_problems ? `${learning.throughput_problems} 道拆了步骤` : '拆步骤后显示'}</span></dd></div>
       </dl>
       <p className="outcome-note">同一任务重复复习只计一条覆盖。整题按今天最后一次明确反馈统计；旧记录未填写的不推断为成功或失败。用时仅含已保存评分的专注时间，不设时长限制。</p>
     </section>
@@ -31,7 +32,7 @@ export default function LearningOutcomes({ data, compact = false }: { data: Stat
         {learning.covered_weak_points.length ? <ul className="outcome-list">{learning.covered_weak_points.map(item => <li key={item.id}><Link to={`/items/${item.id}`}><span><strong>{item.title}</strong><small>{subjectName(item.subject)} · 从原题提炼的小任务</small></span><ArrowRight size={15}/></Link></li>)}</ul> : <p className="outcome-empty">复习从原题提炼的小任务后，这里会显示具体覆盖内容。</p>}
         {today.weak_points_covered > 10 && <p className="outcome-note">展示其中 10 条；覆盖表示练过，不代表已经掌握。</p>}
         <h3>今天的整题表现</h3>
-        {learning.problem_results.length ? <ul className="outcome-list">{learning.problem_results.map(item => <li key={item.id}><Link to={`/items/${item.id}`}><span><strong>{item.title}</strong><small>{item.independent_completed ? '已独立完成' : '尚未独立完成'} · {dateLabel(item.reviewed_at, true)}</small>{item.blocker && <p>主要卡点：{item.blocker}</p>}</span><ArrowRight size={15}/></Link></li>)}</ul> : <p className="outcome-empty">整题复习时明确记录是否独立完成，这里才会出现结果。</p>}
+        {learning.problem_results.length ? <ul className="outcome-list">{learning.problem_results.map(item => <li key={item.id}><Link to={`/items/${item.id}`}><span><strong>{item.title}</strong><small>{item.independent_completed ? '已独立完成' : '尚未独立完成'}{item.throughput !== null && ` · 贯通率 ${percent(item.throughput)}`} · {dateLabel(item.reviewed_at, true)}</small>{item.blocker && <p>主要卡点：{item.blocker}</p>}</span><ArrowRight size={15}/></Link></li>)}</ul> : <p className="outcome-empty">整题复习时明确记录是否独立完成，这里才会出现结果。</p>}
         {learning.problems_attempted > 10 && <p className="outcome-note">共 {learning.problems_attempted} 道，展示最近 10 道。</p>}
       </div>
     </section>}

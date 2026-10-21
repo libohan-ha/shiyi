@@ -24,7 +24,7 @@ def context(request: Request, user: User = Depends(require("read")), db: Session
                                  if key in Preferences.model_fields})
     learning = {key: data["learning"][key] for key in (
         "delayed_reviews", "delayed_successes", "delayed_retention", "delayed_failure_count",
-        "problems_attempted", "problems_completed")}
+        "problems_attempted", "problems_completed", "throughput_problems", "throughput_average")}
     return {"agent_api_version": 1, "study_date": data["forecast"][0]["date"],
             "permissions": [scope for scope in ("read", "write", "review") if scope in request.state.scopes],
             "profile": {"display_name": user.display_name,

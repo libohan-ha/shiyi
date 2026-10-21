@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from .database import get_db, utcnow
 from .library import item_data
 from .models import Item, Review, User
-from .reviews import day_bounds
+from .reviews import day_bounds, throughput
 from .security import require
 
 router = APIRouter(prefix="/api/v1", tags=["学习统计"])
@@ -61,9 +61,11 @@ def learning_summary(recent, items, start, zone, days=30, limit=10):
              "covered_weak_points": [item_data(item, include_answer=False) for item in covered[:limit]],
              "problems_attempted": len(results),
              "problems_completed": sum(review.independent_completed for _, review in results),
+             "throughput_problems": len(rated := [throughput(r.steps) for _, r in results if r.steps]),
+             "throughput_average": sum(rated) / len(rated) if rated else None,
              "problem_results": [{**item_data(item, include_answer=False),
                                   "independent_completed": review.independent_completed, "blocker": review.blocker,
-                                  "reviewed_at": review.reviewed_at} for item, review in results[:limit]]})
+                                  "throughput": throughput(review.steps or []), "reviewed_at": review.reviewed_at} for item, review in results[:limit]]})
 
 
 @router.get("/stats")
