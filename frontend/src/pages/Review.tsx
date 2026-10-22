@@ -120,9 +120,10 @@ function ReviewCard({ item, active, onWorking, onRated, onSkip, onConflict, onEd
   const throughputQuery = useQuery({ queryKey: ['throughput', item.id], queryFn: () => api<Throughput>(`/items/${item.id}/throughput`), enabled: revealed })
   const previous = throughputQuery.data?.latest?.steps ?? null
   const steps: Step[] = previous
-    ? independentCompleted === true ? previous.map(step => ({ text: step.text, done: true }))
+    ? independentCompleted === true ? [...previous.map(step => ({ text: step.text, done: true })), ...stepLines(doneText).map(text => ({ text, done: true }))]
       : [...previous.map((step, index) => ({ text: step.text, done: ticks[index] ?? step.done })), ...stepLines(missText).map(text => ({ text, done: false }))]
-    : independentCompleted === false ? [...stepLines(doneText).map(text => ({ text, done: true })), ...stepLines(missText).map(text => ({ text, done: false }))] : []
+    : independentCompleted === true ? stepLines(doneText).map(text => ({ text, done: true }))
+      : independentCompleted === false ? [...stepLines(doneText).map(text => ({ text, done: true })), ...stepLines(missText).map(text => ({ text, done: false }))] : []
   const stepsValid = steps.length <= 30
   const missedSteps = steps.filter(step => !step.done).length
   const rate = steps.length ? (steps.length - missedSteps) / steps.length : null
@@ -190,6 +191,18 @@ function ReviewCard({ item, active, onWorking, onRated, onSkip, onConflict, onEd
         <label className={independentCompleted === true ? 'selected' : ''}><input type="radio" name="independent-completed" checked={independentCompleted === true} onChange={() => setIndependentCompleted(true)}/>已独立完成</label>
         <label className={independentCompleted === false ? 'selected' : ''}><input type="radio" name="independent-completed" checked={independentCompleted === false} onChange={() => setIndependentCompleted(false)}/>未独立完成</label>
       </div>
+      {independentCompleted === true && <div className="throughput-steps">
+        <div className="throughput-head"><span>这次的贯通率</span><strong>{percent(rate)}</strong><small>{steps.length ? `${steps.length} / ${steps.length} 步` : '把做题步骤记下来，之后复盘可以对照'}</small></div>
+        {previous ? <>
+          <ul className="step-checklist">{previous.map((step, index) => <li key={index} className="done"><label><input type="checkbox" checked disabled/>{step.text}{!step.done && <em>这次做出来了</em>}</label></li>)}</ul>
+          <label className="field" htmlFor="steps-extra">补充的步骤（选填，一行一步）</label>
+          <textarea id="steps-extra" rows={2} value={doneText} onChange={e => setDoneText(e.target.value)} placeholder="这次多走了哪一步？写在这里。"/>
+        </> : <>
+          <label className="field" htmlFor="steps-done-all">我做出来的步骤（选填，一行一步）</label>
+          <textarea id="steps-done-all" rows={3} value={doneText} onChange={e => setDoneText(e.target.value)} placeholder={'统一单位\n求出组数\n算标记位'}/>
+        </>}
+        {!stepsValid && <p className="field-help">最多记录 30 步，请合并一些步骤。</p>}
+      </div>}
       {independentCompleted === false && <div className="throughput-steps">
         <div className="throughput-head"><span>这次的贯通率</span><strong>{percent(rate)}</strong><small>{steps.length ? `${steps.length - missedSteps} / ${steps.length} 步` : '按步骤拆开，先收下做出来的部分'}</small></div>
         {previous ? <>

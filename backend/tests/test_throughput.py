@@ -74,3 +74,44 @@ def test_steps_survive_backup_round_trip(account):
     assert account.get(f"/api/v1/items/{copy['id']}/throughput").json()["first"]["throughput"] == 0.5
     manifest["reviews"][0]["steps"] = [{"text": "x", "done": "yes"}]
     assert import_archive(account, manifest, assets).status_code != 200
+
+
+def test_steps_recorded_when_adding_count_as_first_attempt(account):
+    initial = [{"text": "统一单位", "done": True}, {"text": "求组数", "done": False},
+               {"text": "算标记位", "done": False}, {"text": "写出地址划分", "done": True}]
+    item = problem(account, initial_steps=initial)
+    assert item["initial_steps"] == initial and item["initial_throughput"] == 0.5
+    data = account.get(f"/api/v1/items/{item['id']}/throughput").json()
+    assert data["attempts"] == 1 and data["first"]["steps"] == initial and data["latest"]["steps"] == initial
+
+    # The first review ticks off the steps recorded at entry.
+    ticked = [{**s, "done": s["text"] != "算标记位"} for s in initial]
+    assert rate(account, item, 0, "again", independent_completed=False, steps=ticked).status_code == 201
+    data = account.get(f"/api/v1/items/{item['id']}/throughput").json()
+    assert data["attempts"] == 2 and data["first"]["throughput"] == 0.5 and data["latest"]["throughput"] == 0.75
+
+    edited = account.patch(f"/api/v1/items/{item['id']}", json={"initial_steps": initial[:2]}).json()
+    assert edited["initial_throughput"] == 0.5 and len(edited["initial_steps"]) == 2
+    assert account.patch(f"/api/v1/items/{item['id']}", json={"title": "改名"}).json()["initial_steps"] == initial[:2]
+    bad = account.post("/api/v1/items", json={"title": "x", "subject": "408", "kind": "problem", "question": "q",
+                                              "answer": "a", "initial_steps": [{"text": "s", "done": True}] * 31})
+    assert bad.status_code == 422
+
+
+def test_independent_review_can_record_steps_without_history(account):
+    item = problem(account)
+    steps = [{"text": "统一单位", "done": True}, {"text": "求组数", "done": True}]
+    review = rate(account, item, 0, "good", independent_completed=True, steps=steps).json()["review"]
+    assert review["throughput"] == 1
+    assert account.get(f"/api/v1/items/{item['id']}/throughput").json()["latest"]["steps"] == steps
+
+
+def test_initial_steps_survive_backup_round_trip(account):
+    from tests.test_review_backup import export_archive, import_archive
+    initial = [{"text": "求组数", "done": True}, {"text": "算标记位", "done": False}]
+    item = problem(account, initial_steps=initial)
+    manifest, assets = export_archive(account)
+    assert account.delete(f"/api/v1/items/{item['id']}").status_code in (200, 204)
+    assert import_archive(account, manifest, assets).status_code == 200
+    copy = next(i for i in account.get("/api/v1/items").json()["items"] if i["id"] != item["id"])
+    assert account.get(f"/api/v1/items/{copy['id']}").json()["initial_steps"] == initial

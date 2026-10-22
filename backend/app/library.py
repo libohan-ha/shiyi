@@ -43,6 +43,8 @@ def item_data(item, include_answer=True):
     data["question_media"] = [media_data(a.media) for a in sorted(item.attachments, key=lambda a: a.position) if a.role == "question"]
     if include_answer:
         data.update(answer=item.answer, mistake_reason=item.mistake_reason, takeaway=item.takeaway)
+        steps = item.initial_steps or []
+        data.update(initial_steps=steps, initial_throughput=sum(bool(s.get("done")) for s in steps) / len(steps) if steps else None)
         data["answer_media"] = [media_data(a.media) for a in sorted(item.attachments, key=lambda a: a.position) if a.role == "answer"]
     data["schedule"] = {"due": card.due, "last_review": card.last_review, "stability": card.stability,
                         "difficulty": card.difficulty, "state": "new" if not card.last_review else

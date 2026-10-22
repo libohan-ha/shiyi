@@ -51,6 +51,11 @@ class Preferences(StrictModel):
         return value
 
 
+class StepInput(StrictModel):
+    text: str = Field(min_length=1, max_length=300)
+    done: bool = Field(strict=True)
+
+
 class ItemInput(StrictModel):
     title: str = Field(min_length=1, max_length=240)
     subject: Subject
@@ -65,6 +70,7 @@ class ItemInput(StrictModel):
     is_mistake: bool = False
     mistake_reason: str = Field(default="", max_length=10000)
     takeaway: str = Field(default="", max_length=10000)
+    initial_steps: list[StepInput] = Field(default_factory=list, max_length=30)
     status: Literal["active", "draft", "suspended"] = "active"
     external_id: str | None = Field(default=None, max_length=200)
     question_media: list[str] = Field(default_factory=list, max_length=12)
@@ -92,11 +98,6 @@ def _patch_fields():
 
 
 ItemPatch = create_model("ItemPatch", __base__=ItemInput, **_patch_fields())
-
-
-class StepInput(StrictModel):
-    text: str = Field(min_length=1, max_length=300)
-    done: bool = Field(strict=True)
 
 
 class ReviewInput(StrictModel):
