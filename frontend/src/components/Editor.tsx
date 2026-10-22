@@ -3,10 +3,11 @@ import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, ArrowRight, Check, Crop, ImagePlus, Plus, Save, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, patch, post, refreshLearning } from '../api'
-import { subjects } from '../lib'
+import { percent, stepLines, subjects } from '../lib'
 import type { Chapter, Item, Media, Subject } from '../types'
 import { Content, Modal, Spinner } from './ui'
 import ImageEditor from './ImageEditor'
+import '../review-feedback.css'
 
 type EditorOptions = { item?: Item; subject?: Subject; mistake?: boolean; sourceItem?: Item; blocker?: string; onClosed?: () => void }
 const EditorContext = createContext<(options?: EditorOptions) => void>(() => {})
@@ -101,7 +102,10 @@ function Editor({ options, userId, onClose }: { options: EditorOptions; userId: 
     question: old?.question ?? (sourceItem ? `If：看到什么特征时（针对「${sourceBlocker || sourceItem.title}」）？\nThen：应该触发什么操作？` : ''), answer: old?.answer ?? (sourceItem ? 'If：\nThen：' : ''),
     difficulty: old?.difficulty ?? 'medium', tags: old?.tags.join('，') ?? '', source: old?.source ?? '',
     is_mistake: old?.is_mistake ?? options.mistake ?? false, mistake_reason: old?.mistake_reason ?? '', takeaway: old?.takeaway ?? '',
-    question_media: old?.question_media ?? [] as Media[], answer_media: old?.answer_media ?? [] as Media[] }
+    question_media: old?.question_media ?? [] as Media[], answer_media: old?.answer_media ?? [] as Media[],
+    // 贯通率 of the attempt behind this entry, one step per line.
+    steps_done: old?.initial_steps?.filter(step => step.done).map(step => step.text).join('\n') ?? '',
+    steps_miss: old?.initial_steps?.filter(step => !step.done).map(step => step.text).join('\n') ?? '' }
   const [form, setForm] = useState(defaultForm)
   const [baseline, setBaseline] = useState(defaultForm)
   const [entryNumber, setEntryNumber] = useState(0)
@@ -117,6 +121,8 @@ function Editor({ options, userId, onClose }: { options: EditorOptions; userId: 
   const [chapterOpen, setChapterOpen] = useState(false)
   const dirty = JSON.stringify(form) !== JSON.stringify(baseline)
   const chapters = useQuery({ queryKey: ['chapters'], queryFn: () => api<Chapter[]>('/chapters') })
+  const initialSteps = [...stepLines(form.steps_done ?? '').map(text => ({ text, done: true })), ...stepLines(form.steps_miss ?? '').map(text => ({ text, done: false }))]
+  const initialRate = initialSteps.length ? initialSteps.filter(step => step.done).length / initialSteps.length : null
   const update = <K extends keyof typeof form>(key: K, value: typeof form[K]) => setForm(f => ({ ...f, [key]: value }))
   useEffect(() => {
     if (old || !dirty || busy) return
@@ -156,9 +162,11 @@ function Editor({ options, userId, onClose }: { options: EditorOptions; userId: 
   const save = async (status: string, continueEntry = false) => {
     if (saveLock.current || hasUpload) return
     if (!form.title.trim()) { toast.error('给这条知识起一个标题吧'); return }
+    if (initialSteps.length > 30) { toast.error('贯通率最多记录 30 步，请合并一些步骤'); return }
     saveLock.current = true; setBusy(true)
     try {
-      const payload = { ...form, chapter_id: form.chapter_id || null, tags: form.tags.split(/[,，]/).map(t => t.trim()).filter(Boolean),
+      const { steps_done: _done, steps_miss: _miss, ...fields } = form
+      const payload = { ...fields, initial_steps: form.kind === 'problem' ? initialSteps : [], chapter_id: form.chapter_id || null, tags: form.tags.split(/[,，]/).map(t => t.trim()).filter(Boolean),
         question_media: form.question_media.map(m => m.id), answer_media: form.answer_media.map(m => m.id), status,
         ...(sourceItem ? { source_item_id: sourceItem.id } : {}),
         ...(old ? { expected_version: old.version } : {}) }
@@ -171,7 +179,7 @@ function Editor({ options, userId, onClose }: { options: EditorOptions; userId: 
       }
       refreshLearning(); toast.success(status === 'draft' ? '已保存草稿，随时回来补充' : old ? '修改已保存，复习进度已保留' : '新的知识已收入，等待与你再次相遇')
       if (continueEntry && !old) {
-        const next = { ...form, title: '', question: '', answer: '', question_media: [], answer_media: [], tags: '', source: '', mistake_reason: '', takeaway: '' }
+        const next = { ...form, title: '', question: '', answer: '', question_media: [], answer_media: [], tags: '', source: '', mistake_reason: '', takeaway: '', steps_done: '', steps_miss: '' }
         setForm(next); setBaseline(next); setSavedDraft(null); setDraftState('pending'); setTab('content')
         setChapterOpen(false); setNewChapter(''); setEntryNumber(value => value + 1)
         requestAnimationFrame(() => { titleRef.current?.focus(); titleRef.current?.closest('.modal-body')?.scrollTo({ top: 0 }) })
@@ -182,7 +190,7 @@ function Editor({ options, userId, onClose }: { options: EditorOptions; userId: 
     <div className="editor-top"><span className="eyebrow">{old ? 'REFINE YOUR KNOWLEDGE' : 'A SMALL STEP, A LASTING MEMORY'}</span><div className="tabs"><button disabled={busy || hasUpload} className={tab === 'content' ? 'active' : ''} onClick={() => setTab('content')}>题目与答案</button><button disabled={busy || hasUpload} className={tab === 'notes' ? 'active' : ''} onClick={() => setTab('notes')}>复盘与标记</button></div></div>
     <div className="modal-body editor-body"><fieldset className="editor-fields" disabled={busy}>
       {sourceItem && <div className="derived-source-note"><span className="eyebrow">从一道题，回到一个小问题</span><strong>{sourceItem.title}</strong>{sourceBlocker && <p>本次卡点：{sourceBlocker}</p>}<p>来源原题会自动关联，科目与原题保持一致。请把下方题干改成可独立回答的问题，再补上答案；也可以先存为草稿。小任务有自己的复习进度，不继承原题评分。</p></div>}
-      {savedDraft && <div className="draft-banner"><span>上次还有一条未完成的记录</span><button className="text-button" onClick={() => { try { setForm(JSON.parse(savedDraft)); setSavedDraft(null); toast.success('已恢复上次内容') } catch { setSavedDraft(null) } }}>恢复内容</button><button className="icon-button" aria-label="忽略上次草稿" onClick={() => { setSavedDraft(null); localStorage.removeItem(storageKey) }}><X size={15}/></button></div>}
+      {savedDraft && <div className="draft-banner"><span>上次还有一条未完成的记录</span><button className="text-button" onClick={() => { try { setForm({ ...defaultForm, ...JSON.parse(savedDraft) }); setSavedDraft(null); toast.success('已恢复上次内容') } catch { setSavedDraft(null) } }}>恢复内容</button><button className="icon-button" aria-label="忽略上次草稿" onClick={() => { setSavedDraft(null); localStorage.removeItem(storageKey) }}><X size={15}/></button></div>}
       {tab === 'content' ? <>
         <div className="subject-picker">{subjects.map(s => <button key={s.id} disabled={!!sourceItem} className={`subject-choice ${s.color} ${form.subject === s.id ? 'selected' : ''}`} onClick={() => setForm(f => ({ ...f, subject: s.id, chapter_id: entryDefaults.chapters[s.id] ?? '', kind: s.id === 'english' && !f.is_mistake ? 'vocabulary' : f.kind === 'vocabulary' ? 'concept' : f.kind }))}><span aria-hidden="true">{s.symbol}</span>{s.name}{form.subject === s.id && <Check size={15}/>}</button>)}</div>
         <label className="field">标题 <span className="required">*</span><input ref={titleRef} autoFocus value={form.title} maxLength={240} onChange={e => update('title', e.target.value)} placeholder="例如：Cache 映射方式与地址划分"/></label>
@@ -190,6 +198,14 @@ function Editor({ options, userId, onClose }: { options: EditorOptions; userId: 
         {chapterOpen && <div className="inline-create"><input value={newChapter} aria-label="新章节名称" placeholder="新章节名称" onChange={e => setNewChapter(e.target.value)}/><button className="button secondary small" disabled={!newChapter.trim()} onClick={async () => { try { const c = await post<Chapter>('/chapters', { subject: form.subject, name: newChapter }); await chapters.refetch(); update('chapter_id', c.id); setChapterOpen(false); setNewChapter('') } catch (e) { toast.error((e as Error).message) } }}>添加</button></div>}
         <ContentField key={`question-${entryNumber}`} label="问题 / 题干" disabled={busy} onUploadingChange={v => setUploading(u => ({ ...u, question: v }))} text={form.question} media={form.question_media} onText={v => update('question', v)} onMedia={v => update('question_media', v)} placeholder="下一次复习，你希望自己回答什么？也可以直接粘贴题目截图。"/>
         <ContentField key={`answer-${entryNumber}`} label="答案 / 解析" disabled={busy} onUploadingChange={v => setUploading(u => ({ ...u, answer: v }))} text={form.answer} media={form.answer_media} onText={v => update('answer', v)} onMedia={v => update('answer_media', v)} placeholder="写下参考答案、关键步骤或判定标准。支持 Markdown 和 $LaTeX$ 公式。"/>
+        {form.kind === 'problem' && <div className="throughput-steps">
+          <div className="throughput-head"><span>这次做题的贯通率</span><strong>{percent(initialRate)}</strong><small>{initialSteps.length ? `${initialSteps.length - initialSteps.filter(step => !step.done).length} / ${initialSteps.length} 步 · 记为第一次` : '选填。按步骤拆开，复习时逐项打钩'}</small></div>
+          <label className="field" htmlFor="entry-steps-done">我做出来的（一行一步）</label>
+          <textarea id="entry-steps-done" rows={3} value={form.steps_done} onChange={e => update('steps_done', e.target.value)} placeholder={'统一单位\n求出组数'}/>
+          <label className="field" htmlFor="entry-steps-miss">我没做出来的（一行一步）</label>
+          <textarea id="entry-steps-miss" rows={2} value={form.steps_miss} onChange={e => update('steps_miss', e.target.value)} placeholder="算标记位"/>
+          {initialSteps.length > 30 && <p className="field-help">最多记录 30 步，请合并一些步骤。</p>}
+        </div>}
       </> : <>
         <div className="field"><label>题目本身的难度</label><div className="segmented difficulty-select">{[['basic', '基础'], ['medium', '中等'], ['hard', '较难']].map(([id, label]) => <button key={id} className={form.difficulty === id ? 'active' : ''} onClick={() => update('difficulty', id)}>{label}</button>)}</div><p className="field-help">用于整理和筛选。复习时的表现会单独记录。</p></div>
         <label className="switch-row"><span><strong>加入错题本</strong><small>为这道题保留错因与反思</small></span><input type="checkbox" role="switch" checked={form.is_mistake} onChange={e => update('is_mistake', e.target.checked)}/></label>

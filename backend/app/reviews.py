@@ -236,16 +236,16 @@ def history(item_id: str, page: int = Query(1, ge=1), user: User = Depends(requi
 @router.get("/items/{item_id}/throughput")
 def item_throughput(item_id: str, user: User = Depends(require("read")), db: Session = Depends(get_db)):
     """First and latest 贯通率 of an item, with the latest steps to tick off on the next attempt."""
-    get_item(db, user.id, item_id)
-    reviews = [r for r in db.scalars(select(Review).where(
+    item = get_item(db, user.id, item_id)
+    # The attempt recorded when the entry was added counts as the first one.
+    attempts = [(item.created_at, item.initial_steps)] if item.initial_steps else []
+    attempts += [(r.reviewed_at, r.steps) for r in db.scalars(select(Review).where(
         Review.item_id == item_id, Review.user_id == user.id, Review.undone.is_(False)).order_by(
         Review.reviewed_at, Review.card_version)) if r.steps]
-    if not reviews:
+    if not attempts:
         return {"attempts": 0, "first": None, "latest": None}
-    first, latest = reviews[0], reviews[-1]
-    return {"attempts": len(reviews),
-            "first": {"throughput": throughput(first.steps), "steps": first.steps, "reviewed_at": first.reviewed_at},
-            "latest": {"throughput": throughput(latest.steps), "steps": latest.steps, "reviewed_at": latest.reviewed_at}}
+    snapshot = lambda at, steps: {"throughput": throughput(steps), "steps": steps, "reviewed_at": at}
+    return {"attempts": len(attempts), "first": snapshot(*attempts[0]), "latest": snapshot(*attempts[-1])}
 
 
 @router.post("/reviews/{review_id}/undo")

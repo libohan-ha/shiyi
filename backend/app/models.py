@@ -61,6 +61,8 @@ class Item(Base):
     is_mistake: Mapped[bool] = mapped_column(Boolean, default=False)
     mistake_reason: Mapped[str] = mapped_column(Text, default="")
     takeaway: Mapped[str] = mapped_column(Text, default="")
+    # 贯通率 of the attempt that produced this entry, recorded when it is added.
+    initial_steps: Mapped[list] = mapped_column(JSON, default=list)
     status: Mapped[str] = mapped_column(String(20), default="active", index=True)
     deleted_from: Mapped[str | None] = mapped_column(String(20))
     external_id: Mapped[str | None] = mapped_column(String(200))
