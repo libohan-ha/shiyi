@@ -3,6 +3,8 @@ param(
     [switch]$SkipBuild,
     [switch]$Lan,
     [string]$LanAddress,
+    [switch]$Tailscale,
+    [string[]]$AllowHost,
     [switch]$NoBrowser,
     [switch]$PauseOnReuse
 )
@@ -16,10 +18,29 @@ $runtimeRoot = Join-Path $projectRoot '.local'
 $listenAddress = '127.0.0.1'
 $lanInterface = $null
 . (Join-Path $PSScriptRoot 'lan.ps1')
+. (Join-Path $PSScriptRoot 'tailscale.ps1')
 if ($Lan -or $LanAddress) {
     $lanInterface = Get-ShiyiLanInterface -Address $LanAddress
     $listenAddress = '0.0.0.0'
 }
+# Extra hosts other trusted devices may use (Tailscale / VPN). Unlisted hosts stay rejected.
+$extraHosts = @()
+$tailscaleIdentity = $null
+if ($Tailscale) {
+    $tailscaleIdentity = Get-ShiyiTailscaleIdentity
+    $extraHosts += $tailscaleIdentity.Addresses
+    $extraHosts += $tailscaleIdentity.Names
+}
+foreach ($entry in @($AllowHost | ForEach-Object { $_ -split ',' })) {
+    $name = "$entry".Trim().ToLowerInvariant()
+    if (-not $name) { continue }
+    if ($name -eq '*' -or -not (Test-ShiyiHostName $name)) {
+        throw "AllowHost '$entry' is not a valid host name or IP address (no scheme, port or '*')."
+    }
+    $extraHosts += $name
+}
+$extraHosts = @($extraHosts | Select-Object -Unique)
+if ($extraHosts.Count -gt 0) { $listenAddress = '0.0.0.0' }
 
 function Test-ShiyiServer {
     param([string]$BaseUrl)
@@ -73,12 +94,17 @@ function Show-ShiyiAddresses {
     } else {
         Write-Host 'LAN:   no connected Wi-Fi/Ethernet address found.'
     }
+    foreach ($name in $extraHosts) {
+        if (-not $name.StartsWith('*')) { Write-Host "Remote: http://$($name):$Port" -ForegroundColor Green }
+    }
     $apiBaseUrl = if ($lanInterface) { "http://$($lanInterface.Address):$Port" } else { $localUrl }
     Write-Host "API:   $apiBaseUrl/api/docs"
 }
 
 $localUrl = "http://127.0.0.1:$Port"
-$requestedUrl = if ($lanInterface) { "http://$($lanInterface.Address):$Port" } else { $localUrl }
+$requestedUrl = if ($lanInterface) { "http://$($lanInterface.Address):$Port" }
+    elseif ($extraHosts.Count -gt 0 -and -not $extraHosts[0].StartsWith('*')) { "http://$($extraHosts[0]):$Port" }
+    else { $localUrl }
 $listeners = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)
 if ($listeners.Count -gt 0) {
     if (Test-ShiyiServer -BaseUrl $requestedUrl) {
@@ -92,8 +118,8 @@ if ($listeners.Count -gt 0) {
         if ($PauseOnReuse) { Read-Host 'Press Enter to close this window; the original server will keep running' | Out-Null }
         return
     }
-    if ($lanInterface -and (Test-ShiyiServer -BaseUrl $localUrl)) {
-        throw "Shiyi is running at $localUrl, but cannot be reached at $requestedUrl. Stop the original server with Ctrl+C, then run start-lan.cmd again."
+    if ($requestedUrl -ne $localUrl -and (Test-ShiyiServer -BaseUrl $localUrl)) {
+        throw "Shiyi is running at $localUrl, but cannot be reached at $requestedUrl. Stop the original server with Ctrl+C, then start it again with the LAN/Tailscale option."
     }
     $processIds = ($listeners.OwningProcess | Sort-Object -Unique) -join ', '
     throw "Port $Port is occupied by another service or an unresponsive Shiyi instance (PID: $processIds). Stop that service or choose another port with -Port."
@@ -140,7 +166,7 @@ try {
     $configurationJson = & $python -c 'import json; from app.config import settings; print(json.dumps(dict(trusted_hosts=settings.trusted_hosts, allowed_origins=settings.allowed_origins, secure_cookies=settings.secure_cookies)))'
     if ($LASTEXITCODE -ne 0) { throw 'Unable to read application settings.' }
     $configuration = $configurationJson | ConvertFrom-Json
-    if ($lanInterface -and $configuration.secure_cookies) {
+    if (($lanInterface -or $extraHosts.Count -gt 0) -and $configuration.secure_cookies) {
         throw 'HTTP LAN mode requires SHIYI_SECURE_COOKIES=false. Use your HTTPS deployment for secure cookies.'
     }
     $hosts = @($configuration.trusted_hosts -split ',') + @('localhost', '127.0.0.1')
@@ -153,12 +179,19 @@ try {
         $hosts += $lanInterface.Address
         $origins += $lanUrl
     }
+    foreach ($name in $extraHosts) {
+        $hosts += $name
+        if (-not $name.StartsWith('*')) { $origins += "http://$($name):$Port" }
+    }
     $env:SHIYI_TRUSTED_HOSTS = ($hosts | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Select-Object -Unique) -join ','
     $env:SHIYI_ALLOWED_ORIGINS = ($origins | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Select-Object -Unique) -join ','
     if (-not $env:SHIYI_PUBLIC_URL -and -not $hasConfiguredUrl) {
         $env:SHIYI_PUBLIC_URL = if ($lanInterface) { $lanUrl } else { "http://127.0.0.1:$Port" }
     }
     Show-ShiyiAddresses
+    if ($Tailscale) {
+        Write-Host 'Tailscale firewall setup: right-click allow-tailscale.cmd and choose Run as administrator (once).'
+    }
     if ($lanInterface) {
         Write-Host 'Windows firewall setup: right-click allow-lan.cmd and choose Run as administrator (once).'
     }

@@ -43,6 +43,20 @@ cd 'D:\桌面\shiyi'
 
 脚本优先选择有网关的物理 Wi-Fi / 网线接口，自动配置监听地址、允许的主机及网页来源。端口与来源精确匹配；不需要把 `SHIYI_TRUSTED_HOSTS` 配成 `*`。保持电脑开机、启动窗口运行。如果仍连接不上，检查手机是否连到访客 Wi-Fi，以及路由器是否开启设备隔离。公网部署使用下方的 HTTPS 方案。
 
+### 通过 Tailscale 远程访问
+
+另一台设备（例如运行 Agent 的机器）和电脑在同一个 tailnet 时，双击 **`start-tailscale.cmd`**。脚本会读取本机的 Tailscale IPv4 地址和 MagicDNS 名称（如 `100.101.102.103`、`my-pc`、`my-pc.tail1234.ts.net`），只把这些加入允许的主机和网页来源，启动窗口会列出 `Remote:` 地址。首次使用时右键 **`allow-tailscale.cmd` → 以管理员身份运行**，防火墙规则只放行 tailnet 网段 `100.64.0.0/10` 访问 TCP 8765。
+
+```powershell
+.\scripts\start.ps1 -Tailscale
+# 没装 Tailscale CLI，或用其他 VPN / 内网名称时，手动列出允许的主机（可多次或逗号分隔）：
+.\scripts\start.ps1 -AllowHost 100.101.102.103,my-pc.tail1234.ts.net
+# 也可与局域网一起开启：
+.\scripts\start.ps1 -Lan -Tailscale
+```
+
+主机名不区分大小写，支持 `*.tail1234.ts.net` 这样的子域通配，但不接受单独的 `*`。没有列出的 Host 仍返回 `400 Invalid host header`，本机 `127.0.0.1:8765` 不受影响。长期固定的名称也可以写进 `backend/.env` 的 `SHIYI_TRUSTED_HOSTS`（网页登录还需同时加到 `SHIYI_ALLOWED_ORIGINS`，例如 `http://my-pc:8765`）。
+
 ## 已支持的功能
 
 | 功能 | 使用方式 |
