@@ -1,7 +1,6 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -9,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from . import agent, auth, backup, library, reviews, stats
 from .config import settings
 from .database import engine
+from .hosts import TrustedHosts, parse_hosts
 from .static import SPAFiles
 
 
@@ -22,7 +22,7 @@ async def lifespan(app):
 app = FastAPI(title="拾忆 API", version="1.0.0", lifespan=lifespan,
               description="三科知识与图片错题管理、FSRS 复习调度。外部工具使用 Authorization: Bearer sy_... 鉴权；密钥在网页设置中创建。",
               docs_url="/api/docs", redoc_url="/api/redoc", openapi_url="/api/openapi.json")
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=[host.strip() for host in settings.trusted_hosts.split(",")])
+app.add_middleware(TrustedHosts, allowed_hosts=parse_hosts(settings.trusted_hosts))
 
 
 @app.middleware("http")
